@@ -1,0 +1,13 @@
+
+#map {
+    width: 450px;
+    height: 450px;
+    background-color: black;
+}
+
+#snake {
+    width: 20px;
+    height: 20px;
+    background-color: #00FF00;
+    position: absolute;
+}

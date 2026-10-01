@@ -1,1 +1,54 @@
-<html></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, init">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Snake Game</h1>
+      <div id="snake"></div>
+      <div id="map"></div>
+
+      <button onclick="leftSnake()">Left</button>
+      <button onclick="rightSnake()">Right</button>
+      <button onclick="upSnake()">Up</button>
+      <button onclick="downSnake()">Down</button>
+</body>
+
+
+ <script>
+
+   function leftSnake() {
+    // Code pour déplacer le serpent vers la gauche
+    let snake = document.getElementById("snake");
+    snake.style.left = (parseInt(snake.style.right) || 0) - 25 + "px";
+   
+   }
+
+    function rightSnake() {
+     // Code pour déplacer le serpent vers la droite
+    let snake = document.getElementById("snake");
+    snake.style.left = (parseInt(snake.style.left) || 0) + 25 + "px";
+    }
+
+    function upSnake() {
+     // Code pour déplacer le serpent vers le haut
+     let snake = document.getElementById("snake");
+     snake.style.top = (parseInt(snake.style.top) || 0) - 25 + "px";
+    }
+
+    function downSnake() {
+     // Code pour déplacer le serpent vers le bas
+     let snake = document.getElementById("snake");
+     snake.style.top = (parseInt(snake.style.top) || 0) + 25 + "px";
+    }
+
+    function gameOver() {
+        alert("Game Over!");
+        // Code pour réinitialiser le jeu ou afficher un message de fin de partie
+    }
+
+ </script>
+</html>
