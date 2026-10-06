@@ -1,54 +1,56 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, init">
-    <title>Document</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake.IA</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>Snake Game</h1>
-      <div id="snake"></div>
-      <div id="map"></div>
+    <main class="game">
+        <h1>Snake.IA</h1>
 
-      <button onclick="leftSnake()">Left</button>
-      <button onclick="rightSnake()">Right</button>
-      <button onclick="upSnake()">Up</button>
-      <button onclick="downSnake()">Down</button>
+        <div class="hud">
+            <span>Toi : <strong id="score">0</strong></span>
+            <span id="rival-hud">IA : <strong id="rival-score" class="rival">0</strong></span>
+            <span>Niveau : <strong id="level">1</strong></span>
+            <span>Record : <strong id="best">0</strong></span>
+        </div>
+
+        <div class="board">
+            <div id="map"></div>
+            <div id="overlay" class="overlay">
+                <p id="overlay-title">Snake.IA</p>
+                <p id="overlay-text">Appuie sur Espace ou Démarrer</p>
+                <div id="difficulty" class="difficulty">
+                    <button data-level="off">Sans IA</button>
+                    <button data-level="easy">Facile</button>
+                    <button data-level="normal">Normal</button>
+                    <button data-level="hard">Difficile</button>
+                </div>
+                <button id="start-btn">Démarrer</button>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button data-dir="up" class="up">▲</button>
+            <button data-dir="left" class="left">◀</button>
+            <button id="pause-btn" class="pause">❚❚</button>
+            <button data-dir="right" class="right">▶</button>
+            <button data-dir="down" class="down">▼</button>
+        </div>
+
+        <p class="help">Flèches / ZQSD pour bouger · Espace pour pause · Glisse sur mobile</p>
+    </main>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="game.js"></script>
 </body>
-
-
- <script>
-
-   function leftSnake() {
-    // Code pour déplacer le serpent vers la gauche
-    let snake = document.getElementById("snake");
-    snake.style.left = (parseInt(snake.style.right) || 0) - 25 + "px";
-   
-   }
-
-    function rightSnake() {
-     // Code pour déplacer le serpent vers la droite
-    let snake = document.getElementById("snake");
-    snake.style.left = (parseInt(snake.style.left) || 0) + 25 + "px";
-    }
-
-    function upSnake() {
-     // Code pour déplacer le serpent vers le haut
-     let snake = document.getElementById("snake");
-     snake.style.top = (parseInt(snake.style.top) || 0) - 25 + "px";
-    }
-
-    function downSnake() {
-     // Code pour déplacer le serpent vers le bas
-     let snake = document.getElementById("snake");
-     snake.style.top = (parseInt(snake.style.top) || 0) + 25 + "px";
-    }
-
-    function gameOver() {
-        alert("Game Over!");
-        // Code pour réinitialiser le jeu ou afficher un message de fin de partie
-    }
-
- </script>
 </html>
