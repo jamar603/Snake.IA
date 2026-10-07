@@ -1,0 +1,16 @@
+{
+  "name": "snake-god",
+  "version": "0.1.0",
+  "description": "Snake God - Snake 3D multijoueur : deux Snakes contre le joueur qui controle le monde.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test --test-timeout=20000 test/*.test.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.22.0"
+  }
+}

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake God</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Polices chargées sans bloquer le jeu (repli sur les polices système hors ligne). -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="view"></canvas>
+    <div id="vignette" class="vignette"></div>
+    <div id="fade" class="fade"></div>
+
+    <!-- ===== Menu principal ===== -->
+    <section id="screen-main" class="screen menu-screen">
+        <div class="main-layout">
+            <div class="logo">
+                <span class="logo-small">Le monde est une arme</span>
+                <h1>SNAKE<span>GOD</span></h1>
+                <p class="logo-sub">Deux Snakes survivent. Un dieu contrôle le cube.</p>
+            </div>
+            <nav class="main-nav">
+                <button class="nav-btn primary" data-go="mode"><span>Jouer</span><small>Solo, multijoueur, démonstration</small></button>
+                <button class="nav-btn" data-go="customize"><span>Personnaliser</span><small>Espèce, accessoire, traînée</small></button>
+                <button class="nav-btn" data-go="settings"><span>Paramètres</span><small>Graphismes, caméra, aide</small></button>
+            </nav>
+        </div>
+        <footer class="menu-footer">
+            <div id="profile-chip" class="profile-chip"></div>
+            <div id="conn-status" class="conn-status">Connexion…</div>
+        </footer>
+    </section>
+
+    <!-- ===== Choix du mode ===== -->
+    <section id="screen-mode" class="screen menu-screen hidden">
+        <header class="screen-head">
+            <button class="back-btn" data-back>‹ Retour</button>
+            <h2>Mode de jeu</h2>
+        </header>
+        <div class="mode-grid">
+            <button class="mode-card" data-mode="solo">
+                <div class="mode-art art-solo"></div>
+                <h3>Solo contre l'IA</h3>
+                <p>Choisis ton rôle, l'IA joue les deux autres.</p>
+            </button>
+            <button class="mode-card" data-mode="online">
+                <div class="mode-art art-online"></div>
+                <h3>Multijoueur</h3>
+                <p>Crée un salon ou rejoins des amis avec un code. L'IA complète les places libres.</p>
+            </button>
+            <button class="mode-card" data-mode="demo">
+                <div class="mode-art art-demo"></div>
+                <h3>Démonstration IA</h3>
+                <p>Regarde trois IA s'affronter.</p>
+            </button>
+        </div>
+    </section>
+
+    <!-- ===== Solo : choix du rôle ===== -->
+    <section id="screen-solo" class="screen menu-screen hidden">
+        <header class="screen-head">
+            <button class="back-btn" data-back>‹ Retour</button>
+            <h2>Qui veux-tu incarner ?</h2>
+        </header>
+        <div class="role-pick">
+            <button class="role-big snake" data-solo-role="snake1">
+                <div class="role-emblem emblem-snake"></div>
+                <h3>Snake</h3>
+                <p>Survis, mange, grandis et évolue. Un autre Snake et le dieu sont joués par l'IA.</p>
+                <span class="role-keys">← → tourner · ↑ ↓ monter / descendre</span>
+            </button>
+            <button class="role-big god" data-solo-role="god">
+                <div class="role-emblem emblem-god"></div>
+                <h3>Snake God</h3>
+                <p>Contrôle le monde. Tu vois les prochains événements avant tout le monde. Élimine les deux Snakes.</p>
+                <span class="role-keys">1–6 pouvoirs · clic poser · R axe · ↑ ↓ couche</span>
+            </button>
+        </div>
+    </section>
+
+    <!-- ===== Multijoueur : créer / rejoindre ===== -->
+    <section id="screen-online" class="screen menu-screen hidden">
+        <header class="screen-head">
+            <button class="back-btn" data-back>‹ Retour</button>
+            <h2>Multijoueur</h2>
+        </header>
+        <div class="online-grid">
+            <div class="panel">
+                <h3>Créer un salon</h3>
+                <p class="muted">Tu seras l'hôte. Partage le code à tes amis.</p>
+                <label class="toggle"><input type="checkbox" id="private-toggle"> <span>Salon privé (accessible uniquement avec le code)</span></label>
+                <button id="create-room-btn" class="cta">Créer</button>
+            </div>
+            <div class="panel">
+                <h3>Rejoindre avec un code</h3>
+                <p class="muted">4 lettres, par exemple KQZT.</p>
+                <div class="join-row">
+                    <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off">
+                    <button id="join-btn" class="cta">Rejoindre</button>
+                </div>
+            </div>
+            <div class="panel rooms-panel">
+                <div class="panel-title-row">
+                    <h3>Salons publics</h3>
+                    <button id="refresh-rooms" class="ghost-btn small">Actualiser</button>
+                </div>
+                <ul id="room-list" class="room-list"></ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Salon : rôles ===== -->
+    <section id="screen-room" class="screen menu-screen hidden">
+        <header class="screen-head">
+            <button class="back-btn" id="leave-room-btn">‹ Quitter</button>
+            <h2 id="room-title">Salon</h2>
+            <div class="room-code">Code <strong id="room-code">----</strong> <button id="copy-code" class="ghost-btn small">Copier</button></div>
+        </header>
+        <div class="room-layout">
+            <div class="roles">
+                <button class="role-card" data-role="snake1">
+                    <span class="role-tag">Snake 1</span>
+                    <span class="role-owner"></span>
+                    <span class="role-skin"></span>
+                </button>
+                <button class="role-card" data-role="snake2">
+                    <span class="role-tag">Snake 2</span>
+                    <span class="role-owner"></span>
+                    <span class="role-skin"></span>
+                </button>
+                <button class="role-card god" data-role="god">
+                    <span class="role-tag">Snake God</span>
+                    <span class="role-owner"></span>
+                    <span class="role-skin">Vision divine · contrôle du monde</span>
+                </button>
+            </div>
+            <aside class="panel room-side">
+                <h3>Joueurs</h3>
+                <ul id="player-list" class="player-list"></ul>
+                <p class="muted">Les rôles libres sont joués par l'IA. Si un joueur se déconnecte, l'IA le remplace jusqu'à son retour.</p>
+                <div class="room-actions">
+                    <button id="spectate-btn" class="ghost-btn">Spectateur</button>
+                    <button id="room-customize-btn" class="ghost-btn">Personnaliser</button>
+                    <button id="start-btn" class="cta">Lancer la partie</button>
+                </div>
+                <p id="room-wait" class="muted hidden">En attente du lancement par l'hôte…</p>
+            </aside>
+        </div>
+    </section>
+
+    <!-- ===== Personnalisation ===== -->
+    <section id="screen-customize" class="screen menu-screen custom-screen hidden">
+        <header class="screen-head">
+            <button class="back-btn" data-back>‹ Retour</button>
+            <h2>Ton Snake</h2>
+        </header>
+        <div class="custom-panel panel">
+            <label class="field">
+                <span>Nom</span>
+                <input id="name-input" maxlength="16" placeholder="Joueur" autocomplete="off">
+            </label>
+            <div class="tabs" role="tablist">
+                <button class="tab active" data-tab="skin">Espèce</button>
+                <button class="tab" data-tab="accessory">Accessoire</button>
+                <button class="tab" data-tab="trail">Traînée</button>
+            </div>
+            <div id="custom-options" class="custom-options"></div>
+            <div class="evo-preview">
+                <span>Aperçu de l'évolution</span>
+                <div id="evo-buttons" class="evo-buttons"></div>
+                <p id="evo-desc" class="muted"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ===== Paramètres ===== -->
+    <section id="screen-settings" class="screen menu-screen hidden">
+        <header class="screen-head">
+            <button class="back-btn" data-back>‹ Retour</button>
+            <h2>Paramètres</h2>
+        </header>
+        <div class="panel settings-panel">
+            <div class="setting">
+                <div><strong>Qualité graphique</strong><small>Résolution, ombres, densité des particules</small></div>
+                <div class="segmented" id="quality-seg"></div>
+            </div>
+            <div class="setting">
+                <div><strong>Bloom</strong><small>Halo lumineux des éléments brillants</small></div>
+                <label class="switch"><input type="checkbox" id="bloom-toggle"><span></span></label>
+            </div>
+            <div class="setting">
+                <div><strong>Distance de la caméra</strong><small>Vue à la troisième personne des Snakes</small></div>
+                <input type="range" id="cam-distance" min="0.7" max="1.6" step="0.05">
+            </div>
+            <div class="setting">
+                <div><strong>Champ de vision</strong><small id="fov-value"></small></div>
+                <input type="range" id="fov" min="50" max="85" step="1">
+            </div>
+            <div class="setting">
+                <div><strong>Tremblements de l'écran</strong><small>Lors des chocs et des dégâts</small></div>
+                <label class="switch"><input type="checkbox" id="shake-toggle"><span></span></label>
+            </div>
+            <div class="setting">
+                <div><strong>Aide en jeu</strong><small>Rappel des commandes</small></div>
+                <label class="switch"><input type="checkbox" id="help-toggle"><span></span></label>
+            </div>
+            <div class="controls-ref">
+                <div><h4>Snake</h4><p>← → ou Q / D : tourner<br>↑ ↓ ou Z / S : monter, descendre<br>Mobile : glisser</p></div>
+                <div><h4>Snake God</h4><p>1 à 6 : pouvoirs · clic : poser<br>R : axe · ↑ ↓ ou Maj + molette : couche<br>Glisser : tourner la vue</p></div>
+            </div>
+            <button id="reset-settings" class="ghost-btn">Réinitialiser</button>
+        </div>
+    </section>
+
+    <!-- ===== HUD ===== -->
+    <section id="hud" class="hud hidden">
+        <div class="hud-top">
+            <div id="snake-cards" class="snake-cards"></div>
+            <div class="clock">
+                <div id="timer" class="timer">3:00</div>
+                <div id="phase" class="phase-pill">Phase 1</div>
+            </div>
+            <div id="god-card" class="god-card"></div>
+        </div>
+
+        <div id="countdown" class="countdown hidden"></div>
+        <div id="banner" class="banner hidden"></div>
+
+        <div id="intel" class="intel hidden">
+            <div class="intel-title">Vision divine <span>— toi seul la vois</span></div>
+            <div id="intel-event" class="intel-event"></div>
+            <div class="intel-food">Prochaines nourritures : <strong id="intel-food">3</strong> repérées (fantômes violets)</div>
+        </div>
+
+        <div id="god-panel" class="god-panel hidden">
+            <div class="energy">
+                <div class="energy-label">World Energy <span id="energy-value">0</span></div>
+                <div class="energy-bar"><div id="energy-fill"></div></div>
+            </div>
+            <div id="powers" class="powers"></div>
+            <div class="god-tools">
+                <span>Couche <strong id="layer-value">0</strong></span>
+                <span>Axe <strong id="axis-value">y</strong></span>
+                <span class="hint">Clic : poser · R : axe · ↑ ↓ : couche</span>
+            </div>
+        </div>
+
+        <div id="snake-panel" class="snake-panel hidden">
+            <div class="evo-label"><span id="evo-name">Éclosion</span><small id="evo-next"></small></div>
+            <div class="evo-bar"><div id="evo-fill"></div></div>
+            <div id="snake-help" class="snake-help">← → tourner · ↑ ↓ monter / descendre</div>
+        </div>
+
+        <div id="you-are" class="you-are"></div>
+    </section>
+    <div id="notices" class="notices"></div>
+
+    <!-- ===== Fin de partie ===== -->
+    <section id="screen-end" class="screen end-screen hidden">
+        <div class="end-head">
+            <div id="end-kicker" class="end-kicker">Fin de partie</div>
+            <h2 id="end-title">Victoire</h2>
+            <p id="end-sub" class="end-sub"></p>
+        </div>
+        <div id="end-cards" class="end-cards"></div>
+        <div id="end-match" class="end-match"></div>
+        <div class="end-actions">
+            <button id="end-menu" class="ghost-btn">Menu principal</button>
+            <button id="end-lobby" class="ghost-btn">Retour au salon</button>
+            <button id="end-replay" class="cta">Rejouer</button>
+        </div>
+    </section>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "/vendor/three/build/three.module.js",
+                "three/addons/": "/vendor/three/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
