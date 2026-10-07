@@ -96,7 +96,7 @@ export class Hud extends EventTarget {
         const secs = Math.ceil(state.timeLeftMs / 1000);
         this.el.timer.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
         this.el.timer.classList.toggle("urgent", secs <= 20 && state.status === "playing");
-        this.el.phase.textContent = `Phase ${state.phase} · ${state.phaseName}`;
+        this.el.phase.textContent = `Phase ${state.phase} · ${state.phaseName} · ${state.arena.size}³`;
         this.el.phase.style.setProperty("--phase", `#${PHASE_COLORS[state.phase].getHexString()}`);
 
         const countdown = state.status === "countdown";
@@ -193,7 +193,12 @@ export class Hud extends EventTarget {
                 this.banner(`${escapeHtml(s?.name ?? ev.snake)} est éliminé`, "", "#ff3b5c");
             }
             if (ev.type === "phase") this.banner(`Phase ${ev.phase}`, "Le monde se durcit", `#${PHASE_COLORS[ev.phase].getHexString()}`);
+            if (ev.type === "healed" && ev.snake === myRole) this.notice("+1 PV !");
             if (ev.type === "evolved" && ev.snake === myRole) this.banner(`Évolution : ${ev.name}`, "Ton Snake devient plus puissant", "#ffd34d");
+            if (ev.type === "expansionStart") {
+                const why = { time: "Le temps presse…", growth: "Les Snakes grandissent : l'arène s'agrandit…", density: "Le monde étouffe : l'arène s'agrandit…" };
+                this.banner("WORLD EXPANSION", `${why[ev.reason] ?? "L'arène s'agrandit…"} ${ev.fromSize}³ → ${ev.toSize}³`, "#d9c2ff");
+            }
             if (ev.type === "worldEvent") {
                 const t = EVENT_TEXT[ev.event];
                 if (t) this.banner(t.title, ev.forced ? "Déclenché par le Snake God" : t.sub, t.color);

@@ -1,4 +1,5 @@
 import { DEFAULT_COSMETICS, sanitizeCosmetics } from "/shared/cosmetics.js";
+import { AUDIO_DEFAULTS } from "./audio/AudioManager.js";
 
 const SETTINGS_KEY = "snakegod.settings";
 const PROFILE_KEY = "snakegod.profile";
@@ -16,18 +17,31 @@ export const DEFAULT_SETTINGS = {
     fov: 62,
     screenShake: true,
     showHelp: true,
+    audio: AUDIO_DEFAULTS, // volumes et coupures par catégorie
 };
 
 // Paramètres et profil du joueur, gardés dans le navigateur.
 export class Settings extends EventTarget {
     constructor() {
         super();
-        this.values = { ...DEFAULT_SETTINGS, ...read(SETTINGS_KEY) };
+        const saved = read(SETTINGS_KEY) ?? {};
+        this.values = { ...DEFAULT_SETTINGS, ...saved };
+        this.values.audio = {
+            volume: { ...AUDIO_DEFAULTS.volume, ...saved.audio?.volume },
+            enabled: { ...AUDIO_DEFAULTS.enabled, ...saved.audio?.enabled },
+        };
         const p = read(PROFILE_KEY) ?? {};
         this.profile = {
             name: typeof p.name === "string" ? p.name : "",
             cosmetics: sanitizeCosmetics(p.cosmetics, DEFAULT_COSMETICS.snake1),
         };
+    }
+
+    // Réglage audio : setAudio("volume", "music", 0.5) ou setAudio("enabled", "god", false).
+    setAudio(group, id, value) {
+        const audio = structuredClone(this.values.audio);
+        audio[group][id] = value;
+        this.set("audio", audio);
     }
 
     get(key) {
@@ -45,7 +59,7 @@ export class Settings extends EventTarget {
     }
 
     reset() {
-        this.values = { ...DEFAULT_SETTINGS };
+        this.values = { ...DEFAULT_SETTINGS, audio: structuredClone(AUDIO_DEFAULTS) };
         write(SETTINGS_KEY, this.values);
         this.dispatchEvent(new CustomEvent("change", { detail: {} }));
     }

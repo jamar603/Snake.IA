@@ -24,8 +24,18 @@ export const key = (c) => `${c[0]},${c[1]},${c[2]}`;
 export const chebyshev = (a, b) =>
     Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
 
-export function inBounds(c, size) {
-    return c[0] >= 0 && c[1] >= 0 && c[2] >= 0 && c[0] < size && c[1] < size && c[2] < size;
+// `bounds` : un nombre (cube 0..size-1) ou une arène { min, max } (bornes incluses).
+export function inBounds(c, bounds) {
+    const min = typeof bounds === "number" ? 0 : bounds.min;
+    const max = typeof bounds === "number" ? bounds - 1 : bounds.max;
+    return c[0] >= min && c[1] >= min && c[2] >= min && c[0] <= max && c[1] <= max && c[2] <= max;
+}
+
+// Arène de `size` cellules centrée dans l'espace de coordonnées `maxSize`.
+// Le monde grandit sans décaler les coordonnées existantes.
+export function arenaFor(size, maxSize) {
+    const min = (maxSize - size) / 2;
+    return { min, max: min + size - 1, size };
 }
 
 // Rotation d'un quart de tour (règle de la main droite) autour d'un axe, `turns` fois.

@@ -13,7 +13,7 @@ function seeded(seed = 42) {
 }
 
 function newGame(roster = { snake1: "A", snake2: "B", god: "G" }) {
-    const game = new GameManager({ rng: seeded(), countdownSeconds: 0, worldEvents: false });
+    const game = new GameManager({ rng: seeded(), countdownSeconds: 0, worldEvents: false, size: 9, startSize: 9 });
     game.startMatch(roster);
     // Monde vide et prévisible pour les tests.
     for (const id of [...game.walls.walls.keys()]) game.walls.remove(id);
@@ -160,7 +160,7 @@ test("zone dangereuse : avertissement puis -1 PV", () => {
 });
 
 test("événement du monde : le dieu le voit et peut le déclencher", () => {
-    const game = new GameManager({ rng: seeded(3), countdownSeconds: 0 });
+    const game = new GameManager({ rng: seeded(3), countdownSeconds: 0, size: 9, startSize: 9 });
     game.startMatch({ snake1: "A", god: "G" });
     const intel = game.godIntel();
     assert.ok(intel.nextEvent.inMs > 0);
@@ -182,4 +182,24 @@ test("fruit doré : 50 points et 3 segments", () => {
     game.tick(100);
     assert.equal(s.score, 50);
     assert.equal(s.growth.pending, 3);
+    assert.equal(s.health.hp, SNAKE.maxHp, "déjà au maximum : pas de soin au-delà");
+});
+
+test("le monde grandit : annonce, puis nouvelle taille et nouvelles zones", () => {
+    const game = new GameManager({ rng: seeded(9), countdownSeconds: 0, worldEvents: false });
+    game.startMatch({ snake1: { name: "A", ai: true }, snake2: { name: "B", ai: true } });
+    assert.equal(game.grid.arena.size, 5);
+    let start = null;
+    let complete = null;
+    for (let i = 0; i < 400 && !complete; i++) {
+        for (const ev of game.tick(100)) {
+            if (ev.type === "expansionStart") start ??= ev;
+            if (ev.type === "expansionComplete") complete = ev;
+        }
+    }
+    assert.equal(start.toSize, 7);
+    assert.equal(complete.toSize, 7);
+    assert.equal(game.grid.arena.size, 7);
+    assert.ok(complete.cells.every((c) => c.some((v) => v === 2 || v === 8)), "piliers dans la nouvelle couche");
+    assert.equal(game.snapshot().arena.min, 2);
 });

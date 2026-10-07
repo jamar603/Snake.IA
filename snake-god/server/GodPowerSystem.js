@@ -38,7 +38,7 @@ export class GodPowerSystem {
             return { ok: false, error: `${power.label} se débloque en phase ${power.phase}.` };
         if (now < this.readyAt[powerId]) return { ok: false, error: `${power.label} en recharge.` };
         if (this.energy < power.cost) return { ok: false, error: "World Energy insuffisante." };
-        if (power.needsCell !== false && (!isCell(cell) || !inBounds(cell, this.world.grid.size)))
+        if (power.needsCell !== false && (!isCell(cell) || !inBounds(cell, this.world.grid.arena)))
             return { ok: false, error: "Cellule hors du cube." };
 
         const handler = this.#handlers[powerId];
@@ -79,7 +79,7 @@ export class GodPowerSystem {
             validate(power, cell, axis) {
                 if (this.world.walls.count("rotating") >= power.maxActive)
                     return "Trop de murs rotatifs actifs.";
-                if (!rotatingWallFits(cell, axis, power.arm, this.world.grid.size))
+                if (!rotatingWallFits(cell, axis, power.arm, this.world.grid.arena))
                     return "Le mur rotatif doit pouvoir tourner dans le cube.";
                 return this.#checkCells(rotatingWallCells(cell, axis, power.arm, 0));
             },
@@ -114,7 +114,7 @@ export class GodPowerSystem {
                 return null;
             },
             execute(power, cell, axis, now) {
-                const cells = dangerZoneCells(cell, axis, power.radius, this.world.grid.size);
+                const cells = dangerZoneCells(cell, axis, power.radius, this.world.grid.arena);
                 this.world.zones.add(cells, { kind: "danger", now, warnMs: power.warnMs, durationMs: power.durationMs });
                 return { type: "zoneCreated", cells };
             },
@@ -128,7 +128,7 @@ export class GodPowerSystem {
             .filter((s) => s.alive)
             .map((s) => s.head);
         for (const c of cells) {
-            if (!inBounds(c, this.world.grid.size)) return "Hors du cube.";
+            if (!inBounds(c, this.world.grid.arena)) return "Hors du cube.";
             if (!this.world.grid.isFree(c)) return "Cellule occupée.";
             if (heads.some((h) => chebyshev(h, c) <= 1)) return "Trop près d'un Snake.";
         }

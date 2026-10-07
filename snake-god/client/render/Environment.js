@@ -132,6 +132,11 @@ export class Environment {
         scene.fog = new THREE.FogExp2(0x070612, 0.018);
     }
 
+    // Le socle suit la taille de l'arène (animé dans update).
+    setArena(size) {
+        this.arenaTarget = size;
+    }
+
     setPhase(phase) {
         this.targetTint.copy(PHASE_COLORS[phase] ?? PHASE_COLORS[1]);
     }
@@ -142,6 +147,14 @@ export class Environment {
 
     update(time, dt) {
         this.tint.lerp(this.targetTint, 1 - Math.exp(-dt * 1.5));
+        if (this.arenaTarget) {
+            this.arenaSize ??= this.size;
+            this.arenaSize += (this.arenaTarget - this.arenaSize) * (1 - Math.exp(-dt * 3));
+            const k = this.arenaSize / this.size;
+            this.platform.scale.set(k, 1, k);
+            this.platform.position.y = -this.arenaSize / 2 - 0.9;
+            this.godLight.position.y = this.platform.position.y - 1;
+        }
         this.sky.material.uniforms.uTime.value = time / 1000;
         this.runes.rotation.z += dt * 0.05;
         this.dust.rotation.y += dt * 0.015;

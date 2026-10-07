@@ -3,6 +3,8 @@ import { GRID_SIZE } from "/shared/config.js";
 import { DEFAULT_COSMETICS } from "/shared/cosmetics.js";
 import { key } from "/shared/grid.js";
 import { MATCH_STATUS, S2C } from "/shared/protocol.js";
+import { AudioManager } from "./audio/AudioManager.js";
+import { GameAudio } from "./audio/GameAudio.js";
 import { GodController } from "./input/GodController.js";
 import { SnakeInput } from "./input/SnakeInput.js";
 import { MultiplayerClient } from "./net/MultiplayerClient.js";
@@ -31,13 +33,16 @@ renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(settings.get("fov"), 1, 0.1, 300);
 const postfx = new PostFX(renderer, scene, camera);
+const MENU_ARENA = 7; // taille du cube affiché dans les menus
 const env = new Environment(scene, GRID_SIZE);
+env.setArena(MENU_ARENA);
 const world = new WorldController(scene, GRID_SIZE);
 const effects = new Effects(scene);
-const menuStage = new MenuStage(scene, effects, GRID_SIZE);
+const menuStage = new MenuStage(scene, effects, MENU_ARENA);
 const snakeCamera = new SnakeCamera(camera);
 const godCamera = new GodCamera(camera, canvas, GRID_SIZE);
-const menuCamera = new MenuCamera(camera, GRID_SIZE);
+godCamera.setArena(MENU_ARENA);
+const menuCamera = new MenuCamera(camera, MENU_ARENA);
 
 // ---------- Réseau et interface ----------
 const net = new MultiplayerClient(() => ({ name: settings.profile.name, cosmetics: settings.profile.cosmetics }));
@@ -45,6 +50,10 @@ const ui = new UIManager(settings);
 const hud = new Hud();
 const god = new GodController({ scene, camera, canvas, size: GRID_SIZE, net });
 const snakeInput = new SnakeInput((turn) => net.turn(turn));
+const audio = new AudioManager(settings);
+const gameAudio = new GameAudio(audio, (c) => cellToWorld(c, GRID_SIZE));
+gameAudio.bindInterface();
+gameAudio.menu();
 
 let mode = "menu"; // "menu" | "game"
 let cameraMode = "menu"; // "menu" | "god" | "snake"
@@ -115,7 +124,10 @@ hud.renderGodTools(god);
 // ---------- Messages du serveur ----------
 net.on("connection", ({ connected }) => ui.setConnection(connected));
 net.on(S2C.ROOMS, ({ rooms }) => ui.renderRooms(rooms));
-net.on(S2C.NOTICE, ({ message }) => hud.notice(message));
+net.on(S2C.NOTICE, ({ message }) => {
+    hud.notice(message);
+    gameAudio.notice(mode === "game" && myRole === "god");
+});
 
 net.on(S2C.ROOM, (msg) => {
     if (!msg.code) {
@@ -140,15 +152,18 @@ net.on(S2C.STATE, (msg) => {
     const newMatch = !state || msg.tick < state.tick || (state.status === MATCH_STATUS.ENDED && msg.status !== MATCH_STATUS.ENDED);
     if (msg.status !== MATCH_STATUS.ENDED && mode !== "game") enterGame();
     else if (newMatch) resetMatchView();
+    const prev = state;
     state = msg;
     stateTime = performance.now();
     applyState(msg);
+    gameAudio.onState(msg, prev, myRole);
     updateControls();
 });
 
 net.on(S2C.END, ({ summary }) => {
     if (mode !== "game") enterGame();
     renderEnd(summary, myRole);
+    gameAudio.onEnd(summary, myRole, state?.timeLeftMs === 0);
     const quick = room?.private && room?.name === "Partie rapide";
     ui.setEndActions({ canReplay: quick || room?.hostId === net.playerId, showLobby: !quick });
     hud.setVisible(false);
@@ -175,6 +190,8 @@ function enterGame() {
 }
 
 function enterMenu(screen) {
+    gameAudio.transition();
+    gameAudio.menu();
     fadeThrough(() => {
         mode = "menu";
         resetMatchView();
@@ -194,11 +211,15 @@ function resetMatchView() {
     state = null;
     env.setPhase(1);
     world.setPhase(1);
+    world.setArena(MENU_ARENA);
+    env.setArena(MENU_ARENA);
 }
 
 function applyState(s) {
     const now = performance.now();
     world.applyState(s, now);
+    env.setArena(s.arena.size);
+    godCamera.setArena(s.arena.size);
 
     const occupied = new Set();
     for (const sn of s.snakes) for (const c of sn.body) occupied.add(key(c));
@@ -209,6 +230,7 @@ function applyState(s) {
             snakeViews.set(sn.id, view);
         }
         view.isMine = sn.id === myRole;
+        view.floorY = world.floorY;
         const alive = sn.alive && sn.body.length;
         const run = alive ? world.freeRun(sn.body[0], sn.dir, occupied) : 0;
         view.setState(sn, run, alive && world.foodAhead(sn.body[0], sn.dir));
@@ -252,6 +274,10 @@ function playEvents(s, size) {
                 effects.burst(p, 0xffffff, { count: 40, speed: 3, life: 0.8 });
                 effects.ring(p, glow, { size: 4, life: 1 });
                 postfx.pulse(1);
+                break;
+            case "healed":
+                effects.ring(p, 0x7dff9a, { size: 1.6 });
+                effects.burst(p, 0x7dff9a, { count: 40, speed: 2.5, gravity: -2 });
                 break;
             case "respawn":
                 effects.ring(p, glow, { size: 1.5 });
@@ -301,8 +327,29 @@ function playEvents(s, size) {
                 if (ev.event === "foodRain") for (const c of ev.cells) effects.burst(pos(c), 0x9dff6a, { count: 18, speed: 2 });
                 break;
             case "phase":
-                effects.ring(new THREE.Vector3(), 0xffffff, { size: GRID_SIZE, life: 1.4, width: 0.04 });
+                effects.ring(new THREE.Vector3(), 0xffffff, { size: s.arena.size, life: 1.4, width: 0.04 });
                 postfx.pulse(1.2);
+                break;
+            case "expansionStart":
+                world.startExpansion(ev.fromSize, ev.toSize, ev.inMs);
+                for (let i = 0; i < 6; i++) {
+                    const dir = new THREE.Vector3().randomDirection().multiplyScalar(ev.fromSize / 2);
+                    effects.ring(dir, 0xc9a6ff, { size: 1.2, normal: dir.clone(), life: 1 });
+                }
+                break;
+            case "expansionComplete":
+                effects.ring(new THREE.Vector3(), 0xffffff, { size: ev.toSize, life: 1.2, width: 0.06 });
+                effects.ring(new THREE.Vector3(), 0xc9a6ff, { size: ev.toSize, life: 1.4, normal: new THREE.Vector3(1, 0, 0) });
+                // Gerbe d'énergie sur toute la nouvelle surface.
+                for (let i = 0; i < 40; i++) {
+                    const h = ev.toSize / 2;
+                    const p2 = new THREE.Vector3((Math.random() - 0.5) * 2 * h, (Math.random() - 0.5) * 2 * h, (Math.random() - 0.5) * 2 * h);
+                    p2.setComponent(Math.floor(Math.random() * 3), Math.random() < 0.5 ? -h : h);
+                    effects.burst(p2, 0xd9c2ff, { count: 6, speed: 1.5, life: 0.9 });
+                }
+                for (const c of ev.cells) effects.burst(pos(c), 0x9fc0ff, { count: 12, speed: 2 });
+                shake(0.5);
+                postfx.pulse(1.4);
                 break;
         }
     }
@@ -361,8 +408,9 @@ function frame() {
         for (const v of snakeViews.values()) v.update(alpha, now, dt);
         const myView = snakeViews.get(myRole);
         if (cameraMode === "snake" && myView) snakeCamera.update(myView.headPos, myView.headQuat, dt);
-        else godCamera.update();
+        else godCamera.update(dt);
     }
+    audio.updateListener(camera);
     postfx.render(dt);
     requestAnimationFrame(frame);
 }

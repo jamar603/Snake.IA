@@ -420,6 +420,22 @@ input[type="range"] { accent-color: var(--god); width: 200px; }
 .switch span::after { content: ""; position: absolute; left: 4px; top: 4px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform 0.2s; }
 .switch input:checked + span { background: var(--god); }
 .switch input:checked + span::after { transform: translateX(22px); }
+.settings-section { margin: 18px 0 4px; font-size: 16px; color: var(--god); }
+.audio-grid { display: grid; gap: 2px; }
+.audio-grid .setting { padding: 8px 0; }
+.audio-grid output { font-family: var(--display); font-size: 13px; color: var(--muted); width: 42px; text-align: right; }
+.audio-grid .slider { display: flex; align-items: center; gap: 10px; }
+.audio-toggles-row { border-bottom: none; padding-bottom: 4px; }
+.audio-toggles { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.chip-toggle {
+    padding: 6px 12px;
+    border-radius: 99px;
+    border: 1px solid var(--line-strong);
+    background: rgba(179, 107, 255, 0.18);
+    font-weight: 600;
+    font-size: 14px;
+}
+.chip-toggle.off { background: transparent; color: var(--muted); text-decoration: line-through; border-color: var(--line); }
 .controls-ref { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 14px 0; }
 .controls-ref h4 { margin: 0 0 6px; color: var(--god); }
 .controls-ref p { margin: 0; color: var(--muted); line-height: 1.5; }

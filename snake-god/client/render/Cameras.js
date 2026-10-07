@@ -77,6 +77,13 @@ export class GodCamera {
         this.home = new THREE.Vector3(size * 1.15, size * 0.95, size * 1.35);
     }
 
+    setArena(size) {
+        this.controls.minDistance = size * 0.9;
+        this.controls.maxDistance = size * 3;
+        this.wantedDistance = size * 2.1;
+        this.home.set(size * 1.15, size * 0.95, size * 1.35);
+    }
+
     activate() {
         this.camera.up.set(0, 1, 0);
         this.camera.position.copy(this.home);
@@ -89,7 +96,12 @@ export class GodCamera {
         this.controls.enabled = false;
     }
 
-    update() {
+    update(dt = 0.016) {
+        // Après une expansion, la caméra recule doucement pour tout voir.
+        const d = this.camera.position.length();
+        if (this.controls.enabled && this.wantedDistance && d < this.wantedDistance * 0.92) {
+            this.camera.position.multiplyScalar(1 + Math.min(0.05, dt * 1.2));
+        }
         this.controls.update();
     }
 }

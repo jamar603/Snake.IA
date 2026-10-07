@@ -11,7 +11,7 @@ export const DIRECTIONS = [
 export class Navigation {
     constructor(game) {
         this.game = game;
-        this.size = game.size;
+        this.size = game.grid.arena; // bornes de l'arène actuelle
         this.blocked = new Set();
         this.danger = new Map(); // cellKey -> coût
         this.traps = new Set();

@@ -16,6 +16,13 @@ export class SnakeHealth {
         return now < this.invulnerableUntil;
     }
 
+    // Rend des PV sans dépasser le maximum. Renvoie true si des PV ont été rendus.
+    heal(amount = 1) {
+        if (this.dead || this.hp >= this.maxHp) return false;
+        this.hp = Math.min(this.maxHp, this.hp + amount);
+        return true;
+    }
+
     // Retire `amount` PV sauf pendant l'invulnérabilité. Renvoie true si appliqué.
     damage(now, amount = 1) {
         if (this.dead || this.isInvulnerable(now)) return false;

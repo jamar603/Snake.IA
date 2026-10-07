@@ -24,7 +24,7 @@ export class WorldController {
         this.foodKeys = new Set();
         this.frameColor = PHASE_COLORS[1].clone();
         this.#buildMaterials();
-        this.#buildFrame();
+        this.setArena(7);
         this.#buildIntel();
     }
 
@@ -63,11 +63,15 @@ export class WorldController {
             new THREE.SpriteMaterial({ map: glowTexture(), color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false });
     }
 
-    #buildFrame() {
-        const n = this.size;
+    // Cadre de l'arène (arêtes, coins, grille des faces, points des cellules, sol).
+    // Reconstruit à chaque expansion ; le groupe est ensuite animé vers sa nouvelle taille.
+    #buildFrame(n) {
+        if (this.frame) this.root.remove(this.frame);
+        const frame = new THREE.Group();
+        this.frame = frame;
+        this.root.add(frame);
         const half = n / 2;
-        // Arêtes : tubes lumineux plutôt que des lignes d'un pixel.
-        this.edgeMat = new THREE.MeshBasicMaterial({ color: this.frameColor });
+        this.edgeMat ??= new THREE.MeshBasicMaterial({ color: this.frameColor });
         const edgeGeo = new THREE.CylinderGeometry(0.035, 0.035, n, 8);
         const corners = [-half, half];
         for (const a of corners) {
@@ -80,7 +84,7 @@ export class WorldController {
                 const ez = new THREE.Mesh(edgeGeo, this.edgeMat);
                 ez.rotation.x = Math.PI / 2;
                 ez.position.set(a, b, 0);
-                this.root.add(ex, ey, ez);
+                frame.add(ex, ey, ez);
             }
         }
         // Nœuds d'énergie aux coins.
@@ -94,7 +98,7 @@ export class WorldController {
                     glow.scale.setScalar(1.3);
                     glow.position.copy(node.position);
                     this.cornerSprites.push(glow);
-                    this.root.add(node, glow);
+                    frame.add(node, glow);
                 }
 
         // Grille légère sur les faces : repères de profondeur.
@@ -109,21 +113,18 @@ export class WorldController {
         }
         const gridGeo = new THREE.BufferGeometry();
         gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-        this.gridMat = new THREE.LineBasicMaterial({ color: 0x6d7cff, transparent: true, opacity: 0.12, depthWrite: false });
-        this.root.add(new THREE.LineSegments(gridGeo, this.gridMat));
+        this.gridMat ??= new THREE.LineBasicMaterial({ color: 0x6d7cff, transparent: true, opacity: 0.12, depthWrite: false });
+        frame.add(new THREE.LineSegments(gridGeo, this.gridMat));
 
         // Un point par cellule : on lit la profondeur à l'intérieur du cube.
         const dots = [];
-        const p = new THREE.Vector3();
+        const o = (n - 1) / 2;
         for (let x = 0; x < n; x++)
             for (let y = 0; y < n; y++)
-                for (let z = 0; z < n; z++) {
-                    cellToWorld([x, y, z], n, p);
-                    dots.push(p.x, p.y, p.z);
-                }
+                for (let z = 0; z < n; z++) dots.push(x - o, y - o, z - o);
         const dotGeo = new THREE.BufferGeometry();
         dotGeo.setAttribute("position", new THREE.Float32BufferAttribute(dots, 3));
-        this.root.add(
+        frame.add(
             new THREE.Points(
                 dotGeo,
                 new THREE.PointsMaterial({ color: 0x9fb0ff, size: 0.07, map: glowTexture(), transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })
@@ -138,7 +139,96 @@ export class WorldController {
         floor.rotation.x = -Math.PI / 2;
         floor.position.y = -half - 0.01;
         floor.receiveShadow = true;
-        this.root.add(floor);
+        frame.add(floor);
+    }
+
+    // ---------- Expansion du monde ----------
+    get floorY() {
+        return -this.arenaSize / 2;
+    }
+
+    // Change la taille de l'arène. Animée : le cadre part de l'ancienne taille.
+    setArena(size, animate = false) {
+        if (size === this.arenaSize && this.frame) return;
+        const previous = this.arenaSize ?? size;
+        this.arenaSize = size;
+        this.#buildFrame(size);
+        this.frameAnim = animate ? { from: previous / size, t: 0 } : null;
+        this.frame.scale.setScalar(animate ? previous / size : 1);
+        this.#endConstruction();
+    }
+
+    // Annonce : cadre fantôme à la nouvelle taille et cellules qui se matérialisent.
+    startExpansion(fromSize, toSize, durationMs) {
+        this.#endConstruction(true);
+        const group = new THREE.Group();
+        const ghost = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(toSize, toSize, toSize)),
+            new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 })
+        );
+        group.add(ghost);
+        // Une cellule lumineuse par nouvelle case de la couche extérieure.
+        const cells = [];
+        const half = (toSize - 1) / 2;
+        const oldHalf = (fromSize - 1) / 2;
+        for (let x = -half; x <= half; x++)
+            for (let y = -half; y <= half; y++)
+                for (let z = -half; z <= half; z++) {
+                    if (Math.max(Math.abs(x), Math.abs(y), Math.abs(z)) <= oldHalf) continue;
+                    cells.push(new THREE.Vector3(x, y, z));
+                }
+        const mat = new THREE.MeshBasicMaterial({ color: 0xc9a6ff, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
+        const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.86, 0.86, 0.86), mat, cells.length);
+        mesh.frustumCulled = false;
+        const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+        for (let i = 0; i < cells.length; i++) mesh.setMatrixAt(i, zero);
+        // Les cellules les plus proches de l'ancien cadre apparaissent en premier.
+        const delays = cells.map(
+            (c) => ((Math.max(Math.abs(c.x), Math.abs(c.y), Math.abs(c.z)) - oldHalf - 1) / Math.max(1, half - oldHalf - 1)) * 0.45 + Math.random() * 0.3
+        );
+        group.add(mesh);
+        this.root.add(group);
+        this.construction = { group, ghost, mesh, mat, cells, delays, t: 0, duration: durationMs / 1000, fading: false };
+    }
+
+    // Fin de la construction : les cellules lumineuses s'estompent (ou disparaissent d'un coup).
+    #endConstruction(now = false) {
+        const c = this.construction;
+        if (!c) return;
+        if (now) {
+            this.root.remove(c.group);
+            this.construction = null;
+            return;
+        }
+        c.fading = true;
+        c.fade = 1;
+    }
+
+    #updateConstruction(dt, time) {
+        const c = this.construction;
+        if (!c) return;
+        if (c.fading) {
+            c.fade -= dt * 1.4;
+            c.mat.opacity = Math.max(0, c.fade) * 0.5;
+            c.ghost.material.opacity = Math.max(0, c.fade) * 0.4;
+            if (c.fade <= 0) {
+                this.root.remove(c.group);
+                c.mesh.geometry.dispose();
+                this.construction = null;
+            }
+            return;
+        }
+        c.t += dt / c.duration;
+        c.ghost.material.opacity = 0.25 + 0.25 * Math.abs(Math.sin(time / 140));
+        const m = new THREE.Matrix4();
+        c.cells.forEach((p, i) => {
+            const k = Math.min(1, Math.max(0, (c.t - c.delays[i]) * 4));
+            const flicker = k > 0 && k < 1 ? 0.7 + 0.3 * Math.sin(time / 30 + i) : 1;
+            m.makeScale(k * flicker, k * flicker, k * flicker).setPosition(p);
+            c.mesh.setMatrixAt(i, m);
+        });
+        c.mesh.instanceMatrix.needsUpdate = true;
+        c.mat.opacity = 0.2 + 0.3 * Math.min(1, c.t);
     }
 
     // Aperçus réservés au Snake God : prochaines nourritures et prochain événement.
@@ -157,6 +247,8 @@ export class WorldController {
     }
 
     applyState(state, time) {
+        this.arena = state.arena;
+        if (state.arena && state.arena.size !== this.arenaSize) this.setArena(state.arena.size, state.arena.size > this.arenaSize);
         this.#syncWalls(state.walls, time);
         this.#syncCells(this.traps, state.traps.map((c) => ({ cell: c, kind: "trap" })), (it) => this.#createTrap(it), time);
         this.#syncCells(this.food, state.food, (it) => this.#createFood(it), time);
@@ -419,7 +511,7 @@ export class WorldController {
     freeRun(head, dir, snakeCells) {
         let c = add(head, dir);
         let run = 0;
-        while (inBounds(c, this.size) && !this.blocked.has(key(c)) && !snakeCells.has(key(c))) {
+        while (inBounds(c, this.arena ?? this.size) && !this.blocked.has(key(c)) && !snakeCells.has(key(c))) {
             run++;
             c = add(c, dir);
         }
@@ -444,6 +536,13 @@ export class WorldController {
     update(time, dt) {
         const gameNow = (this.elapsedMs ?? 0) + (time - (this.stateTime ?? time));
         if (this.frameTarget) this.frameColor.lerp(this.frameTarget, 1 - Math.exp(-dt * 2));
+        if (this.frameAnim) {
+            const f = this.frameAnim;
+            f.t = Math.min(1, f.t + dt / 0.7);
+            this.frame.scale.setScalar(f.from + (1 - f.from) * easeOutBack(f.t));
+            if (f.t >= 1) this.frameAnim = null;
+        }
+        this.#updateConstruction(dt, time);
         this.edgeMat.color.copy(this.frameColor);
         for (const s of this.cornerSprites) s.material.color.copy(this.frameColor);
 

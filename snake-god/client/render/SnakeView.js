@@ -53,6 +53,7 @@ export class SnakeView {
         this.isMine = false;
         this.trailAcc = 0;
         this.tier = 1;
+        this.floorY = -size / 2;
     }
 
     setState(snake, aimRun, foodAhead) {
@@ -120,7 +121,7 @@ export class SnakeView {
         this.model.setOpacity(this.cur.invulnerable ? (Math.sin(time / 60) > 0 ? 0.9 : 0.3) : 1);
         this.model.update(dt);
 
-        this.shadow.position.set(this.headPos.x, -this.size / 2 + 0.02, this.headPos.z);
+        this.shadow.position.set(this.headPos.x, this.floorY + 0.02, this.headPos.z);
         this.#emitTrail(dt);
 
         if (this.isMine) {

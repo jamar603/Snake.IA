@@ -1,12 +1,14 @@
-import { inBounds, key } from "../shared/grid.js";
+import { arenaFor, inBounds, key } from "../shared/grid.js";
 
 // Le cube : dimensions, tirage de cellules et requêtes d'occupation.
 // Les systèmes (murs, pièges, nourriture, Snakes) s'enregistrent comme
 // "occupants" pour que la recherche de cellule libre reste centralisée.
 export class WorldGrid {
-    constructor(size, rng = Math.random) {
+    // `size` : espace de coordonnées ; l'arène jouable (centrée) peut être plus petite.
+    constructor(size, rng = Math.random, arenaSize = size) {
         this.size = size;
         this.rng = rng;
+        this.setArenaSize(arenaSize);
         this.occupants = []; // fonctions (cellKey) => boolean
     }
 
@@ -14,8 +16,16 @@ export class WorldGrid {
         this.occupants.push(fn);
     }
 
+    setArenaSize(arenaSize) {
+        this.arena = arenaFor(arenaSize, this.size);
+    }
+
+    get volume() {
+        return this.arena.size ** 3;
+    }
+
     inBounds(cell) {
-        return inBounds(cell, this.size);
+        return inBounds(cell, this.arena);
     }
 
     isFree(cell) {
@@ -25,7 +35,7 @@ export class WorldGrid {
     }
 
     randomCell() {
-        const r = () => Math.floor(this.rng() * this.size);
+        const r = () => this.arena.min + Math.floor(this.rng() * this.arena.size);
         return [r(), r(), r()];
     }
 

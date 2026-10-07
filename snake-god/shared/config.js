@@ -2,7 +2,22 @@
 // Toute la logique de jeu vit sur le serveur ; le client lit ces valeurs
 // uniquement pour l'affichage (coûts, couleurs, taille du cube...).
 
-export const GRID_SIZE = 9; // le cube fait GRID_SIZE³ cellules
+// Le monde grandit pendant la partie : 5³ -> 7³ -> 9³ -> 11³.
+// GRID_SIZE = taille maximale = espace de coordonnées (l'arène y est centrée).
+export const WORLD = {
+    maxSize: 11,
+    sizes: [5, 7, 9, 11],
+    // Une expansion se déclenche dès qu'UN critère est atteint pour l'étape suivante,
+    // mais jamais avant `minProgress` : la montée en puissance reste progressive.
+    minProgress: [0.1, 0.3, 0.52], // fraction du temps de partie
+    timeThresholds: [0.22, 0.45, 0.7],
+    lengthThresholds: [16, 36, 64], // longueur cumulée des Snakes vivants
+    densityThreshold: 0.15, // (murs + corps) / volume de l'arène
+    warnMs: 2800, // annonce -> fin de la construction
+    foodBySize: { 5: 4, 7: 5, 9: 6, 11: 8 },
+    pillarsBySize: { 5: 1, 7: 2, 9: 2, 11: 3 }, // piliers ajoutés à chaque taille
+};
+export const GRID_SIZE = WORLD.maxSize;
 
 export const MATCH_SECONDS = 180;
 export const COUNTDOWN_SECONDS = 3;
@@ -105,7 +120,7 @@ export const PHASES = [
 // Événements du monde. Le Snake God les voit à l'avance (information exclusive).
 export const WORLD_EVENTS = {
     intervalMs: [16000, 24000],
-    goldenFruit: { label: "Fruit doré", points: 50, growth: 3, lifetimeMs: 15000 },
+    goldenFruit: { label: "Fruit doré", points: 50, growth: 3, heal: 1, lifetimeMs: 15000 },
     foodRain: { label: "Pluie de nourriture", count: 5 },
     meteorShower: { label: "Pluie de météores", count: 6, warnMs: 1500, durationMs: 700 },
 };

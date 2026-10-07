@@ -37,6 +37,25 @@ function client(port, token) {
     return c;
 }
 
+// Cellule de l'arène libre et à plus d'une case des têtes.
+function freeCell(state) {
+    const taken = new Set();
+    for (const w of state.walls) for (const c of w.cells) taken.add(c.join());
+    for (const f of state.food) taken.add(f.cell.join());
+    for (const c of state.traps) taken.add(c.join());
+    for (const s of state.snakes) for (const c of s.body) taken.add(c.join());
+    const heads = state.snakes.map((s) => s.body[0]);
+    const { min, max } = state.arena;
+    for (let x = min; x <= max; x++)
+        for (let y = max; y >= min; y--)
+            for (let z = min; z <= max; z++) {
+                const c = [x, y, z];
+                if (taken.has(c.join())) continue;
+                if (heads.every((h) => Math.max(...h.map((v, i) => Math.abs(v - c[i]))) > 2)) return c;
+            }
+    throw new Error("aucune cellule libre");
+}
+
 test("trois joueurs, pouvoirs, fin de partie et reconnexion", async () => {
     const http = createServer();
     const mm = new MultiplayerManager(http, { matchSeconds: 3, countdownSeconds: 0 });
@@ -81,12 +100,14 @@ test("trois joueurs, pouvoirs, fin de partie et reconnexion", async () => {
     assert.equal(godState.intel.upcomingFood.length, 3);
 
     // Le dieu pose un piège loin des Snakes.
-    g.send({ t: C2S.POWER, power: "trap", cell: [4, 8, 4] });
-    const withTrap = await a.wait((m) => m.t === S2C.STATE && m.traps.some((c) => c.join() === "4,8,4"));
+    // Le dieu pose un piège sur une cellule libre, loin des Snakes.
+    const spot = freeCell(godState);
+    g.send({ t: C2S.POWER, power: "trap", cell: spot });
+    const withTrap = await a.wait((m) => m.t === S2C.STATE && m.traps.some((c) => c.join() === spot.join()));
     assert.ok(withTrap.god.energy < 40);
 
     // Un Snake ne peut pas utiliser les pouvoirs.
-    a.send({ t: C2S.POWER, power: "trap", cell: [5, 8, 5] });
+    a.send({ t: C2S.POWER, power: "trap", cell: freeCell(withTrap) });
     a.send({ t: C2S.TURN, turn: "up" });
 
     // Reconnexion : même jeton -> même rôle.

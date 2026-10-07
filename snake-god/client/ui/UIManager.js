@@ -1,5 +1,6 @@
 import { ROLE_INFO } from "/shared/config.js";
 import { ACCESSORIES, EVOLUTIONS, SKINS, TRAILS } from "/shared/cosmetics.js";
+import { AUDIO_CATEGORIES } from "../audio/AudioManager.js";
 import { QUALITY } from "../settings.js";
 import { escapeHtml, hexColor } from "./util.js";
 
@@ -237,6 +238,30 @@ export class UIManager extends EventTarget {
             this.settings.set("fov", Number(e.target.value));
             this.#renderSettings();
         });
+        // Audio : volumes (curseurs) et coupure par catégorie (pastilles).
+        const volumes = { master: "Volume général", music: "Musique", sfx: "Effets sonores", ambient: "Ambiance", voice: "Voix" };
+        $("audio-volumes").innerHTML = Object.entries(volumes)
+            .map(
+                ([id, label]) => `<div class="setting"><div><strong>${label}</strong></div>
+                <div class="slider"><input type="range" min="0" max="1" step="0.05" data-volume="${id}"><output data-out="${id}"></output></div></div>`
+            )
+            .join("");
+        for (const input of $("audio-volumes").querySelectorAll("input")) {
+            input.addEventListener("input", () => {
+                this.settings.setAudio("volume", input.dataset.volume, Number(input.value));
+                this.#renderSettings();
+            });
+        }
+        $("audio-toggles").innerHTML = Object.entries(AUDIO_CATEGORIES)
+            .map(([id, c]) => `<button class="chip-toggle" data-cat="${id}">${c.label}</button>`)
+            .join("");
+        for (const b of $("audio-toggles").querySelectorAll("button")) {
+            b.addEventListener("click", () => {
+                const id = b.dataset.cat;
+                this.settings.setAudio("enabled", id, !this.settings.get("audio").enabled[id]);
+                this.#renderSettings();
+            });
+        }
         $("reset-settings").addEventListener("click", () => {
             this.settings.reset();
             this.#renderSettings();
@@ -252,6 +277,12 @@ export class UIManager extends EventTarget {
         $("cam-distance").value = v.cameraDistance;
         $("fov").value = v.fov;
         $("fov-value").textContent = `${v.fov}°`;
+        for (const input of $("audio-volumes").querySelectorAll("input")) {
+            const val = v.audio.volume[input.dataset.volume];
+            input.value = val;
+            $("audio-volumes").querySelector(`[data-out="${input.dataset.volume}"]`).textContent = `${Math.round(val * 100)} %`;
+        }
+        for (const b of $("audio-toggles").querySelectorAll("button")) b.classList.toggle("off", !v.audio.enabled[b.dataset.cat]);
     }
 
     // ---------- Fin de partie ----------

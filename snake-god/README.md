@@ -1,6 +1,6 @@
 # Snake God
 
-Snake 3D multijoueur à trois joueurs, dans un cube de 9 × 9 × 9 cellules.
+Snake 3D multijoueur à trois joueurs, dans un cube qui grandit pendant la partie (de 5³ à 11³ cellules).
 
 - **Snake 1** et **Snake 2** : survivre, manger, grandir, évoluer. Chaque Snake a 3 PV.
 - **Snake God** : contrôle et transforme le monde avec la **World Energy**, voit à l'avance les prochains événements, et doit éliminer les deux Snakes avant la fin du timer.
@@ -99,6 +99,30 @@ Le Snake God, et lui seul, voit à l'avance le prochain événement du monde (ty
 
 La couleur du monde change à chaque phase. Tous les réglages sont dans `shared/config.js` et `shared/cosmetics.js`.
 
+### Monde dynamique
+
+Le cube grandit pendant la partie : **5³ → 7³ → 9³ → 11³**. Chaque expansion se déclenche dès qu'un critère est atteint : temps écoulé, longueur cumulée des Snakes, ou densité du monde (murs + corps / volume). Un temps minimum par étape garde une montée progressive (en moyenne : 7³ vers 20 s, 9³ vers 55 s, 11³ vers 95 s).
+
+Une expansion dure 2,8 s : annonce « WORLD EXPANSION », cadre fantôme à la future taille, nouvelles cellules qui se matérialisent couche par couche, puis le cadre s'étire, le socle grandit, de nouveaux piliers de cristal apparaissent dans les nouvelles zones et la nourriture devient plus abondante. Le serveur garde des coordonnées fixes (arène centrée dans un espace 11³) : rien ne se décale quand le monde grandit.
+
+### Son
+
+Tout le son est synthétisé en direct (Web Audio API), sans fichier audio.
+
+- **Musique dynamique** générative en couches (pad, basse, grosse caisse, charleston, arpège, caisse claire, ostinato de tension). Les couches entrent et sortent en fondu selon l'intensité, le tempo accélère (80 → 142 BPM) et l'harmonie s'assombrit : exploration (phase 1), croissance (phase 2), danger (phase 3), chaos (phase 4), puis tension maximale dans les 20 dernières secondes. L'intensité dépend aussi de la taille des Snakes, des expansions et du danger.
+- **Expansion du cube** : montée de tension, pulsations d'activation qui accélèrent, crépitements de construction, impact final.
+- **Snakes** : déplacement, manger, fruit doré, croissance, évolution, perte de PV, récupération de PV, collision, piège, réapparition, mort. Chaque son varie légèrement à chaque fois.
+- **Snake God** : signature grave et réverbérée, un son reconnaissable par pouvoir (piège, mur, mur rotatif et ses rotations, démolition, zone, déclenchement).
+- **Vision divine** : une cloche cristalline, entendue par le Snake God seul, signale chaque nouvelle révélation.
+- **Danger** : battement de cœur discret quand un piège, une zone ou une lame est tout proche, ou quand il ne reste qu'un PV. Le bourdon d'ambiance gronde à mesure que le monde approche de sa taille maximale.
+- **Audio spatial 3D** (HRTF) : pièges, murs, pouvoirs, impacts et événements sont placés dans l'espace ; l'auditeur suit la caméra.
+- **Fin de partie** : fanfare (victoire des Snakes), chœur sombre (victoire du dieu), descente douce (défaite), cloche (fin du timer), sting d'élimination. Un annonceur (synthèse vocale du navigateur) annonce phases, expansions, 20 dernières secondes et résultat.
+- **Paramètres** : volume général, musique, effets, ambiance, voix ; coupure séparée de chaque catégorie (musique, ambiance, voix, effets, Snakes, Snake God, monde, interface).
+
+Le son démarre au premier clic ou à la première touche (règle des navigateurs).
+
+Le fruit doré rend aussi 1 PV (sans dépasser le maximum).
+
 ## IA
 
 Les rôles sans joueur sont joués par l'IA, côté serveur, avec les mêmes règles que les humains (mêmes virages, même énergie, mêmes cooldowns).
@@ -127,6 +151,7 @@ server/
   SnakeGrowth.js          croissance
   FoodSystem.js           nourriture, fruits spéciaux, prochaines apparitions
   WorldEventSystem.js     événements du monde planifiés à l'avance
+  WorldExpansionSystem.js croissance du cube (5³ -> 11³)
   ZoneSystem.js           zones dangereuses et impacts de météores
   GodPowerSystem.js       World Energy, cooldowns, validation des pouvoirs
   TrapSystem.js           pièges
@@ -148,6 +173,12 @@ client/
   render/textures.js      textures procédurales (peaux, circuits, runes)
   input/SnakeInput.js     clavier / tactile des Snakes
   input/GodController.js  pouvoir, couche, axe, aperçu, clic
+  audio/AudioManager.js   contexte audio, bus par catégorie, réverbération, audio spatial, annonceur
+  audio/Music.js          musique générative en couches
+  audio/Ambient.js        vent cosmique et bourdon
+  audio/GameAudio.js      événements du jeu -> sons, intensité, danger, vision divine
+  audio/sounds/           recettes sonores : snake, god, world, ui
+  audio/synth.js          primitives de synthèse
   ui/UIManager.js         menus et navigation
   ui/Hud.js               interface en jeu
   ui/EndScreen.js         écran de fin
@@ -158,4 +189,4 @@ Ajouter un pouvoir : le déclarer dans `POWERS` (`shared/config.js`), écrire sa
 
 ## Prochaines étapes
 
-Mur mobile, téléporteurs, rotation d'une partie du monde, événements de coopération (générateur à détruire, clé), sons et musique.
+Mur mobile, téléporteurs, rotation d'une partie du monde, événements de coopération (générateur à détruire, clé). Les signatures sonores du téléporteur et de la rotation du monde seront à créer avec ces pouvoirs.

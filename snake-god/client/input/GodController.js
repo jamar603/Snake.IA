@@ -29,6 +29,7 @@ export class GodController extends EventTarget {
         this.power = "trap";
         this.axis = "y";
         this.layer = Math.floor(size / 2);
+        this.arena = { min: 0, max: size - 1, size };
         this.hoverCell = null;
         this.state = null;
         this.raycaster = new THREE.Raycaster();
@@ -41,7 +42,9 @@ export class GodController extends EventTarget {
     }
 
     #buildLayer() {
-        const n = this.size;
+        const n = this.arena.size;
+        const visible = this.layerGroup?.visible ?? false;
+        if (this.layerGroup) this.scene.remove(this.layerGroup);
         this.layerGroup = new THREE.Group();
         const plane = new THREE.Mesh(
             new THREE.PlaneGeometry(n, n),
@@ -58,7 +61,7 @@ export class GodController extends EventTarget {
         grid.material.transparent = true;
         grid.material.opacity = 0.35;
         this.layerGroup.add(plane, grid);
-        this.layerGroup.visible = false;
+        this.layerGroup.visible = visible;
         this.scene.add(this.layerGroup);
         this.#placeLayer();
     }
@@ -138,7 +141,7 @@ export class GodController extends EventTarget {
         }
         const cell = worldToCell(hit, this.size);
         cell[1] = this.layer;
-        this.hoverCell = inBounds(cell, this.size) ? cell : null;
+        this.hoverCell = inBounds(cell, this.arena) ? cell : null;
         this.#refreshGhost();
     }
 
@@ -155,7 +158,15 @@ export class GodController extends EventTarget {
 
     setState(state) {
         this.state = state;
+        if (state.arena && state.arena.size !== this.arena.size) this.setArena(state.arena);
         this.#refreshGhost();
+    }
+
+    // L'arène a grandi : plan de couche à la bonne taille, couche gardée dans les bornes.
+    setArena(arena) {
+        this.arena = arena;
+        this.#buildLayer();
+        this.setLayer(this.layer);
     }
 
     selectPower(id) {
@@ -176,7 +187,7 @@ export class GodController extends EventTarget {
     }
 
     setLayer(layer) {
-        this.layer = Math.max(0, Math.min(this.size - 1, layer));
+        this.layer = Math.max(this.arena.min, Math.min(this.arena.max, layer));
         this.#placeLayer();
         this.#pick();
         this.#changed();
@@ -192,7 +203,7 @@ export class GodController extends EventTarget {
         const p = POWERS[this.power];
         if (this.power === "wall") return straightWallCells(cell, this.axis, p.length);
         if (this.power === "rotatingWall") return rotatingWallCells(cell, this.axis, p.arm, 0);
-        if (this.power === "dangerZone") return dangerZoneCells(cell, this.axis, p.radius, this.size);
+        if (this.power === "dangerZone") return dangerZoneCells(cell, this.axis, p.radius, this.arena);
         return [cell];
     }
 
@@ -203,7 +214,7 @@ export class GodController extends EventTarget {
         const god = s.god;
         const info = god.powers[this.power];
         if (!info.unlocked || info.cooldownLeft > 0 || god.energy < POWERS[this.power].cost) return false;
-        if (this.power === "rotatingWall" && !rotatingWallFits(this.hoverCell, this.axis, POWERS.rotatingWall.arm, this.size))
+        if (this.power === "rotatingWall" && !rotatingWallFits(this.hoverCell, this.axis, POWERS.rotatingWall.arm, this.arena))
             return false;
         const wallCells = new Set();
         for (const w of s.walls) for (const c of w.cells) wallCells.add(key(c));
@@ -215,7 +226,7 @@ export class GodController extends EventTarget {
         for (const sn of s.snakes) for (const c of sn.body) taken.add(key(c));
         const heads = s.snakes.filter((sn) => sn.alive && sn.body.length).map((sn) => sn.body[0]);
         return cells.every(
-            (c) => inBounds(c, this.size) && !taken.has(key(c)) && heads.every((h) => chebyshev(h, c) > 1)
+            (c) => inBounds(c, this.arena) && !taken.has(key(c)) && heads.every((h) => chebyshev(h, c) > 1)
         );
     }
 
@@ -228,13 +239,13 @@ export class GodController extends EventTarget {
         this.ghostEdgeMat.color.setHex(color);
         this.dropLine.material.color.setHex(color);
         this.ghostCells.forEach((m, i) => {
-            m.visible = i < cells.length && inBounds(cells[i], this.size);
+            m.visible = i < cells.length && inBounds(cells[i], this.arena);
             if (m.visible) cellToWorld(cells[i], this.size, m.position);
         });
         const top = cellToWorld(this.hoverCell, this.size);
         const pos = this.dropLine.geometry.attributes.position;
         pos.setXYZ(0, top.x, top.y - 0.5, top.z);
-        pos.setXYZ(1, top.x, -this.size / 2, top.z);
+        pos.setXYZ(1, top.x, this.arena.min - (this.size - 1) / 2 - 0.5, top.z);
         pos.needsUpdate = true;
         this.dropLine.computeLineDistances();
     }

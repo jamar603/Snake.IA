@@ -90,7 +90,7 @@ export class GodAI {
 
     // Mur rotatif près de la route du Snake : son balayage coupe le passage.
     #rotatingWall(target) {
-        const size = this.game.size;
+        const size = this.game.grid.arena;
         const arm = POWERS.rotatingWall.arm;
         const axes = ["y", "x", "z"];
         shuffle(axes, this.rng);

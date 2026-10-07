@@ -6,10 +6,11 @@ import {
     PHASES,
     STARTING_PILLARS,
     UPCOMING_FOOD_PREVIEW,
+    WORLD,
     WORLD_EVENTS,
 } from "../shared/config.js";
 import { DEFAULT_COSMETICS, evolutionFor, sanitizeCosmetics } from "../shared/cosmetics.js";
-import { AXES, add, chebyshev, cross, equals, key } from "../shared/grid.js";
+import { AXES, add, chebyshev, cross, equals, inBounds, key } from "../shared/grid.js";
 import { MATCH_STATUS } from "../shared/protocol.js";
 import { GodAI } from "./ai/GodAI.js";
 import { Navigation } from "./ai/Navigation.js";
@@ -21,6 +22,7 @@ import { SnakeController } from "./SnakeController.js";
 import { TrapSystem } from "./TrapSystem.js";
 import { WallSystem } from "./WallSystem.js";
 import { WorldEventSystem } from "./WorldEventSystem.js";
+import { WorldExpansionSystem } from "./WorldExpansionSystem.js";
 import { WorldGrid } from "./WorldGrid.js";
 import { ZoneSystem } from "./ZoneSystem.js";
 
@@ -35,7 +37,9 @@ const DIRECTIONS = [
 export class GameManager {
     constructor({
         rng = Math.random,
-        size = GRID_SIZE,
+        size = GRID_SIZE, // espace de coordonnées = taille maximale du monde
+        startSize = Math.min(size, WORLD.sizes[0]),
+        expansion = true,
         matchSeconds = MATCH_SECONDS,
         countdownSeconds = COUNTDOWN_SECONDS,
         worldEvents = true,
@@ -43,6 +47,8 @@ export class GameManager {
         this.rng = rng;
         this.worldEventsEnabled = worldEvents;
         this.size = size;
+        this.sizes = [startSize, ...WORLD.sizes.filter((s) => s > startSize && s <= size)];
+        this.expansionEnabled = expansion;
         this.matchMs = matchSeconds * 1000;
         this.countdownMs = countdownSeconds * 1000;
         this.status = MATCH_STATUS.LOBBY;
@@ -57,10 +63,11 @@ export class GameManager {
             if (v) roster[role] = typeof v === "string" ? { name: v, ai: false } : v;
         }
         this.aiRoles = new Set(Object.keys(roster).filter((r) => roster[r].ai));
-        this.grid = new WorldGrid(this.size, this.rng);
+        this.grid = new WorldGrid(this.size, this.rng, this.sizes[0]);
+        this.expansion = new WorldExpansionSystem(this.sizes, { enabled: this.expansionEnabled });
         this.walls = new WallSystem();
         this.traps = new TrapSystem();
-        this.food = new FoodSystem(this.grid, FOOD_COUNT, UPCOMING_FOOD_PREVIEW);
+        this.food = new FoodSystem(this.grid, WORLD.foodBySize[this.sizes[0]] ?? FOOD_COUNT, UPCOMING_FOOD_PREVIEW);
         this.zones = new ZoneSystem();
         this.worldEvents = new WorldEventSystem({ grid: this.grid, food: this.food, zones: this.zones, rng: this.rng });
         this.scores = new ScoreManager();
@@ -78,11 +85,12 @@ export class GameManager {
         this.grid.addOccupant((k) => this.snakes.some((s) => s.body.some((c) => key(c) === k)));
 
         // Couloirs différents : pas de choc frontal dès le départ.
-        const lo = 2;
-        const hi = this.size - 3;
+        const a = this.grid.arena;
+        const lo = a.min + 1;
+        const hi = a.max - 1;
         const spawns = {
-            snake1: { cell: [1, lo, lo], dir: [1, 0, 0] },
-            snake2: { cell: [this.size - 2, hi, hi], dir: [-1, 0, 0] },
+            snake1: { cell: [a.min, lo, lo], dir: [1, 0, 0] },
+            snake2: { cell: [a.max, hi, hi], dir: [-1, 0, 0] },
         };
         for (const id of ["snake1", "snake2"]) {
             if (!roster[id]) continue;
@@ -104,21 +112,45 @@ export class GameManager {
         this.snakeAIs = new Map(this.snakes.map((s) => [s.id, new SnakeAI(s, this.rng)]));
         this.godAI = roster.god ? new GodAI(this, this.rng) : null;
 
-        this.#placePillars();
+        this.#placePillars(WORLD.pillarsBySize[this.sizes[0]] ?? STARTING_PILLARS);
         this.food.refill(this.snakes.map((s) => s.head));
         if (this.worldEventsEnabled) this.worldEvents.schedule(0);
         this.status = this.countdownMs > 0 ? MATCH_STATUS.COUNTDOWN : MATCH_STATUS.PLAYING;
     }
 
-    #placePillars() {
-        const heads = this.snakes.map((s) => s.head);
-        for (let i = 0; i < STARTING_PILLARS; i++) {
-            const base = this.grid.findFreeCell((c) => heads.every((h) => chebyshev(c, h) > 2));
-            if (!base) return;
+    // Piliers de cristal ; `outside` : seulement hors de cette ancienne arène (nouvelles zones).
+    #placePillars(count, outside = null) {
+        const heads = this.snakes.filter((s) => s.alive && s.body.length).map((s) => s.head);
+        const placed = [];
+        for (let i = 0; i < count; i++) {
+            const base = this.grid.findFreeCell(
+                (c) => heads.every((h) => chebyshev(c, h) > 2) && (!outside || !inBounds(c, outside))
+            );
+            if (!base) break;
             const top = add(base, [0, 1, 0]);
             const cells = this.grid.isFree(top) ? [base, top] : [base];
             this.walls.addStatic(cells, { kind: "pillar" });
+            placed.push(...cells);
         }
+        return placed;
+    }
+
+    // Le monde grandit avec le temps, la taille des Snakes et sa densité.
+    #updateExpansion() {
+        const alive = this.snakes.filter((s) => s.alive);
+        const totalLength = alive.reduce((n, s) => n + s.length, 0);
+        const density = (this.walls.cellIndex.size + totalLength) / this.grid.volume;
+        const ev = this.expansion.update(this.now, { progress: this.now / this.matchMs, totalLength, density });
+        if (!ev) return;
+        if (ev.type === "start") {
+            this.events.push({ type: "expansionStart", fromSize: ev.fromSize, toSize: ev.toSize, inMs: ev.inMs, reason: ev.reason });
+            return;
+        }
+        const before = this.grid.arena;
+        this.grid.setArenaSize(ev.toSize);
+        this.food.count = WORLD.foodBySize[ev.toSize] ?? this.food.count;
+        const pillars = this.#placePillars(WORLD.pillarsBySize[ev.toSize] ?? 0, before);
+        this.events.push({ type: "expansionComplete", fromSize: ev.fromSize, toSize: ev.toSize, cells: pillars });
     }
 
     get phase() {
@@ -182,6 +214,7 @@ export class GameManager {
         if (this.godAI && this.isAi("god")) this.godAI.update(new Navigation(this));
         this.#updateWalls();
         this.#updateWorld();
+        this.#updateExpansion();
         this.#moveSnakes();
         this.food.refill(this.snakes.filter((s) => s.alive).map((s) => s.head));
         this.#checkEnd();
@@ -274,6 +307,8 @@ export class GameManager {
                 s.growth.feed(golden ? WORLD_EVENTS.goldenFruit.growth : 1);
                 this.scores.onFoodEaten(s, golden ? WORLD_EVENTS.goldenFruit.points : undefined);
                 this.events.push({ type: "foodEaten", cells: [s.head], snake: s.id, golden });
+                // Le fruit doré soigne : +1 PV.
+                if (golden && s.health.heal(WORLD_EVENTS.goldenFruit.heal)) this.events.push({ type: "healed", cells: [s.head], snake: s.id, hp: s.health.hp });
                 const tier = evolutionFor(s.length + s.growth.pending);
                 if (tier.tier > tierBefore) this.events.push({ type: "evolved", snake: s.id, tier: tier.tier, name: tier.name, cells: [s.head] });
             }
@@ -370,6 +405,8 @@ export class GameManager {
             elapsedMs: this.now,
             countdownMs: Math.max(0, this.countdownLeft),
             size: this.size,
+            arena: this.grid.arena,
+            expansion: this.expansion.snapshot(this.now),
             snakes: this.snakes.map((s) => ({ ...s.snapshot(this.now), ai: this.isAi(s.id) })),
             walls: this.walls.snapshot(),
             traps: this.traps.snapshot(),
