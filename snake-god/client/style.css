@@ -161,7 +161,7 @@ h1, h2, h3, h4 { font-family: var(--display); letter-spacing: 0.04em; }
     filter: drop-shadow(0 0 30px rgba(179, 107, 255, 0.45));
 }
 .logo h1 span {
-    display: block;
+    display: inline;
     background: linear-gradient(90deg, #d38cff, #7c3aed 60%, #ff4fd8);
     -webkit-background-clip: text;
     background-clip: text;

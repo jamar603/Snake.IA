@@ -23,6 +23,7 @@ export class GameAudio {
         this.lastCountdown = null;
         this.intelKey = null;
         this.saidFinal = false;
+        this.combo = { count: 0, at: 0 }; // repas enchaînés du joueur local
         audio.onReady(() => {
             this.music.start();
             this.ambient.start();
@@ -124,7 +125,7 @@ export class GameAudio {
             const k = `${ev.type}:${ev.cells.map(key).join("|")}`;
             if (k !== this.intelKey && state.status === "playing") {
                 this.intelKey = k;
-                this.#play("god", GodSounds.intel);
+                this.#play("god", GodSounds.intel, { echo: 0.35, reverb: 0.3 });
             }
         }
 
@@ -161,10 +162,20 @@ export class GameAudio {
             const mine = ev.snake === myRole;
             const gain = ev.snake && !mine ? 0.6 : 1;
             switch (ev.type) {
-                case "foodEaten":
-                    this.#play("snake", ev.golden ? SnakeSounds.golden : SnakeSounds.eat, { position, gain });
+                case "foodEaten": {
+                    // Repas enchaînés (moins de 3 s d'écart) : la note monte, comme un combo.
+                    let combo = 0;
+                    if (mine) {
+                        const now = performance.now();
+                        this.combo.count = now - this.combo.at < 3000 ? this.combo.count + 1 : 0;
+                        this.combo.at = now;
+                        combo = this.combo.count;
+                    }
+                    const recipe = ev.golden ? SnakeSounds.golden : (c, o, t) => SnakeSounds.eat(c, o, t, { combo });
+                    this.#play("snake", recipe, { position, gain, echo: mine ? 0.25 : 0 });
                     if (mine) this.#play("snake", SnakeSounds.grow, { delay: 0.12, gain: 0.7 });
                     break;
+                }
                 case "damage":
                     this.#play("snake", SnakeSounds.hurt, { position, gain });
                     if (ev.cause === "trap") this.#play("snake", SnakeSounds.trapHit, { position, gain });
@@ -173,6 +184,7 @@ export class GameAudio {
                 case "eliminated":
                     this.#play("snake", SnakeSounds.death, { position, reverb: 0.5 });
                     this.#play("world", WorldSounds.elimination, { delay: 0.3 });
+                    this.music.hit();
                     break;
                 case "healed":
                     this.#play("snake", SnakeSounds.heal, { position, gain, delay: 0.15 });
@@ -181,10 +193,10 @@ export class GameAudio {
                     this.#play("snake", SnakeSounds.respawn, { position, gain });
                     break;
                 case "evolved":
-                    this.#play("snake", SnakeSounds.evolve, { position, gain: mine ? 1 : 0.5, reverb: 0.3 });
+                    this.#play("snake", SnakeSounds.evolve, { position, gain: mine ? 1 : 0.5, reverb: 0.3, echo: 0.2 });
                     break;
                 case "trapPlaced":
-                    this.#play("god", GodSounds.trap, { position, reverb: 0.25 });
+                    this.#play("god", GodSounds.trap, { position, reverb: 0.25, echo: 0.2 });
                     break;
                 case "wallPlaced":
                     this.#play("god", ev.power === "rotatingWall" ? GodSounds.rotatingWall : GodSounds.wall, { position, reverb: 0.35 });
@@ -207,7 +219,7 @@ export class GameAudio {
                     } else this.#play("world", WorldSounds.burn, { position });
                     break;
                 case "worldEvent":
-                    if (ev.forced) this.#play("god", GodSounds.trigger, { reverb: 0.9 });
+                    if (ev.forced) this.#play("god", GodSounds.trigger, { reverb: 0.9, echo: 0.2 });
                     if (ev.event === "goldenFruit") this.#play("world", WorldSounds.goldenFruit, { position, reverb: 0.4 });
                     else if (ev.event === "foodRain") this.#play("world", WorldSounds.foodRain, { position });
                     else if (ev.event === "meteorShower") {
@@ -216,17 +228,21 @@ export class GameAudio {
                     break;
                 case "phase":
                     this.#play("world", (c, o, t) => WorldSounds.phase(c, o, t, { phase: ev.phase }), { reverb: 0.6 });
+                    this.music.build(0.5);
+                    setTimeout(() => this.music.hit(), 450);
                     this.audio.say(`Phase ${["", "un", "deux", "trois", "quatre"][ev.phase]}`);
                     break;
                 case "expansionStart": {
                     const d = ev.inMs / 1000;
                     this.#play("world", (c, o, t) => WorldSounds.expansionRise(c, o, t, { duration: d }), { reverb: 0.4 });
                     this.#play("world", (c, o, t) => WorldSounds.construction(c, o, t, { duration: 1.4 }), { delay: Math.max(0, d - 1.5) });
+                    this.music.build(d);
                     this.audio.say("Expansion du monde");
                     break;
                 }
                 case "expansionComplete":
                     this.#play("world", WorldSounds.expansionImpact, { reverb: 0.8 });
+                    this.music.hit();
                     break;
             }
         }

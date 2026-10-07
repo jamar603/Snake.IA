@@ -1,6 +1,6 @@
-# Snake God
+# Snakora
 
-Snake 3D multijoueur à trois joueurs, dans un cube qui grandit pendant la partie (de 5³ à 11³ cellules).
+**Snakora** : Snake 3D multijoueur à trois joueurs, dans un cube qui grandit pendant la partie (de 5³ à 11³ cellules).
 
 - **Snake 1** et **Snake 2** : survivre, manger, grandir, évoluer. Chaque Snake a 3 PV.
 - **Snake God** : contrôle et transforme le monde avec la **World Energy**, voit à l'avance les prochains événements, et doit éliminer les deux Snakes avant la fin du timer.
@@ -107,9 +107,10 @@ Une expansion dure 2,8 s : annonce « WORLD EXPANSION », cadre fantôme à la f
 
 ### Son
 
-Tout le son est synthétisé en direct (Web Audio API), sans fichier audio.
+Tout le son est synthétisé en direct (Web Audio API), sans fichier audio, dans un style arcade sci-fi / darksynth : synthèse FM cristalline, supersaws, sub-basses, glitch numérique, écho stéréo calé sur le tempo, réverbération, compression et égalisation sur le master.
 
-- **Musique dynamique** générative en couches (pad, basse, grosse caisse, charleston, arpège, caisse claire, ostinato de tension). Les couches entrent et sortent en fondu selon l'intensité, le tempo accélère (80 → 142 BPM) et l'harmonie s'assombrit : exploration (phase 1), croissance (phase 2), danger (phase 3), chaos (phase 4), puis tension maximale dans les 20 dernières secondes. L'intensité dépend aussi de la taille des Snakes, des expansions et du danger.
+- **Musique dynamique** générative : nappe supersaw, arpège à écho, sub-basse, grosse caisse avec effet de pompe (sidechain), charleston, basse roulante (basse "reese" en mode chaos), clap, mélodie thème, roulements de toms et montées de tension. Les couches entrent et sortent en fondu, le tempo accélère (92 → 148 BPM) et l'harmonie s'assombrit : exploration (phase 1), croissance (phase 2), danger (phase 3), chaos (phase 4), puis tension maximale dans les 20 dernières secondes. Les changements de phase et les expansions déclenchent une montée de filtre puis un impact musical. L'intensité dépend aussi de la taille des Snakes, des expansions et du danger.
+- **Combo** : des repas enchaînés font monter la note du son "pickup".
 - **Expansion du cube** : montée de tension, pulsations d'activation qui accélèrent, crépitements de construction, impact final.
 - **Snakes** : déplacement, manger, fruit doré, croissance, évolution, perte de PV, récupération de PV, collision, piège, réapparition, mort. Chaque son varie légèrement à chaque fois.
 - **Snake God** : signature grave et réverbérée, un son reconnaissable par pouvoir (piège, mur, mur rotatif et ses rotations, démolition, zone, déclenchement).

@@ -55,6 +55,21 @@ export class AudioManager {
         const ctx = new Ctx();
         this.ctx = ctx;
 
+        // Chaîne master : compression "glue", couleur (graves ronds, aigus brillants), limiteur.
+        const glue = ctx.createDynamicsCompressor();
+        glue.threshold.value = -18;
+        glue.knee.value = 10;
+        glue.ratio.value = 2.5;
+        glue.attack.value = 0.02;
+        glue.release.value = 0.25;
+        const lowShelf = ctx.createBiquadFilter();
+        lowShelf.type = "lowshelf";
+        lowShelf.frequency.value = 90;
+        lowShelf.gain.value = 2.5;
+        const highShelf = ctx.createBiquadFilter();
+        highShelf.type = "highshelf";
+        highShelf.frequency.value = 7000;
+        highShelf.gain.value = 2;
         // Limiteur final : évite la saturation quand beaucoup de sons se superposent.
         const limiter = ctx.createDynamicsCompressor();
         limiter.threshold.value = -10;
@@ -62,10 +77,10 @@ export class AudioManager {
         limiter.ratio.value = 8;
         limiter.attack.value = 0.003;
         limiter.release.value = 0.2;
-        limiter.connect(ctx.destination);
+        glue.connect(lowShelf).connect(highShelf).connect(limiter).connect(ctx.destination);
 
         this.buses.master = ctx.createGain();
-        this.buses.master.connect(limiter);
+        this.buses.master.connect(glue);
         for (const id of Object.keys(AUDIO_CATEGORIES)) this.buses[id] = ctx.createGain();
         for (const [id, cat] of Object.entries(AUDIO_CATEGORIES)) this.buses[id].connect(this.buses[cat.parent]);
 
@@ -75,6 +90,28 @@ export class AudioManager {
         this.reverbSend = ctx.createGain();
         this.reverbSend.gain.value = 0.6;
         this.reverbSend.connect(this.reverb).connect(this.buses.master);
+
+        // Écho stéréo "ping-pong" partagé (envoi) : arpèges, pickups, signatures du dieu.
+        this.echoSend = ctx.createGain();
+        const left = ctx.createDelay(2);
+        const right = ctx.createDelay(2);
+        left.delayTime.value = 0.28;
+        right.delayTime.value = 0.28;
+        const feedback = ctx.createGain();
+        feedback.gain.value = 0.38;
+        const tone = ctx.createBiquadFilter();
+        tone.type = "lowpass";
+        tone.frequency.value = 3800;
+        const merger = ctx.createChannelMerger(2);
+        this.echoSend.connect(left);
+        left.connect(tone).connect(right);
+        right.connect(feedback).connect(left);
+        left.connect(merger, 0, 0);
+        right.connect(merger, 0, 1);
+        const echoOut = ctx.createGain();
+        echoOut.gain.value = 0.5;
+        merger.connect(echoOut).connect(this.buses.master);
+        this.echoDelays = [left, right];
 
         this.applySettings();
         for (const fn of this.listeners) fn(this);
@@ -96,7 +133,8 @@ export class AudioManager {
 
     // Sortie pour un son : bus de catégorie, éventuellement spatialisé et réverbéré.
     // Renvoie le nœud dans lequel brancher le son, ou null si l'audio n'est pas prêt.
-    output(category, { position = null, reverb = 0, gain = 1 } = {}) {
+    // `echo` : envoi vers l'écho stéréo ; `reverb` : envoi vers la réverbération.
+    output(category, { position = null, reverb = 0, echo = 0, gain = 1 } = {}) {
         if (!this.ctx) return null;
         const ctx = this.ctx;
         const input = ctx.createGain();
@@ -120,9 +158,21 @@ export class AudioManager {
             send.gain.value = reverb;
             node.connect(send).connect(this.reverbSend);
         }
+        if (echo > 0) {
+            const send = ctx.createGain();
+            send.gain.value = echo;
+            node.connect(send).connect(this.echoSend);
+        }
         // Nettoyage : déconnecte le graphe une fois le son terminé.
         setTimeout(() => input.disconnect(), 8000);
         return input;
+    }
+
+    // Cale l'écho sur le tempo de la musique (croche pointée).
+    setTempo(bpm) {
+        if (!this.echoDelays) return;
+        const time = (60 / bpm) * 0.75;
+        for (const d of this.echoDelays) d.delayTime.setTargetAtTime(time, this.ctx.currentTime, 0.5);
     }
 
     // Joue une "recette" sonore : fn(ctx, out, t) qui fabrique le son.

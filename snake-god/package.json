@@ -1,7 +1,7 @@
 {
-  "name": "snake-god",
+  "name": "snakora",
   "version": "0.1.0",
-  "description": "Snake God - Snake 3D multijoueur : deux Snakes contre le joueur qui controle le monde.",
+  "description": "Snakora - Snake 3D multijoueur : deux Snakes contre le Snake God, le joueur qui controle le monde.",
   "type": "module",
   "main": "server/index.js",
   "scripts": {

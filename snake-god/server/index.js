@@ -52,7 +52,7 @@ if (process.env.COUNTDOWN_SECONDS) options.countdownSeconds = Number(process.env
 new MultiplayerManager(server, options);
 
 server.listen(PORT, () => {
-    console.log(`Snake God : http://localhost:${PORT}`);
+    console.log(`Snakora : http://localhost:${PORT}`);
     for (const nets of Object.values(networkInterfaces())) {
         for (const net of nets ?? []) {
             if (net.family === "IPv4" && !net.internal) console.log(`  réseau local : http://${net.address}:${PORT}`);
