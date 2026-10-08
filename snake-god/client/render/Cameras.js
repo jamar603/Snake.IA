@@ -125,6 +125,26 @@ export class GodCamera {
         this.controls.enabled = false;
     }
 
+    // Manette : tourne autour de la cible (radians) et zoome (facteur), dans les mêmes
+    // limites que la souris. Calcul direct en coordonnées sphériques (API publique seulement).
+    orbit(dTheta, dPhi) {
+        if (!this.controls.enabled || (!dTheta && !dPhi)) return;
+        const offset = this.camera.position.clone().sub(this.controls.target);
+        const s = new THREE.Spherical().setFromVector3(offset);
+        s.theta -= dTheta;
+        s.phi = Math.max(0.08, Math.min(Math.PI - 0.08, s.phi - dPhi));
+        offset.setFromSpherical(s);
+        this.camera.position.copy(this.controls.target).add(offset);
+    }
+
+    zoom(factor) {
+        if (!this.controls.enabled || factor === 1) return;
+        const offset = this.camera.position.clone().sub(this.controls.target);
+        const d = Math.max(this.controls.minDistance, Math.min(this.controls.maxDistance, offset.length() * factor));
+        this.camera.position.copy(this.controls.target).add(offset.setLength(d));
+        this.wantedDistance = null; // le joueur a choisi sa distance
+    }
+
     update(dt = 0.016) {
         // Après une expansion, la caméra recule doucement pour tout voir.
         const d = this.camera.position.length();

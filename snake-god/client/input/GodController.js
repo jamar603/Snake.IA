@@ -2,17 +2,20 @@ import * as THREE from "three";
 import { POWERS, POWER_IDS } from "/shared/config.js";
 import { chebyshev, dangerZoneCells, key, rotatingWallCells, rotatingWallFits, straightWallCells } from "/shared/grid.js";
 import { createMap } from "/shared/maps/index.js";
-import { worldPieces } from "../render/assets.js";
+import { propPieces, worldPieces } from "../render/assets.js";
+import { trapModelFor } from "../render/catalog.js";
 import { cellToWorld, vec, worldToCell } from "../render/coords.js";
 import { hazardTexture } from "../render/textures.js";
 
 const VALID = 0xb36bff;
 const INVALID = 0xff3b5c;
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 // Contrôles du Snake God : choix du pouvoir, clic direct sur la surface visée (une face du
 // CUBE ou le terrain WORLD), aperçu fantôme couché sur la face, envoi au serveur (qui valide).
 // R change l'orientation des murs (les deux directions de la face).
+// Manette : le stick gauche déplace un viseur à l'écran, actions de l'InputManager pour le reste.
 // CUBE 3D (version classique) : on vise sur une couche horizontale (↑ ↓ ou Maj + molette),
 // R choisit l'axe (x, y, z) des murs, des lames et des dalles.
 export class GodController extends EventTarget {
@@ -36,19 +39,28 @@ export class GodController extends EventTarget {
         this.layer = 0;
 
         this.#buildCursor();
+        this.#buildPadCursor();
         this.#buildLayer();
         this.#buildGhost();
         this.#bindInput();
-        // Aperçu du piège : la vraie mine, en fantôme.
-        worldPieces.then((pieces) => {
-            if (!pieces?.Trap) return;
-            this.trapGhost = pieces.Trap.clone();
-            this.trapGhost.traverse((o) => {
-                if (o.isMesh) o.material = this.ghostMat;
-            });
-            this.trapGhost.visible = false;
-            this.ghost.add(this.trapGhost);
-        });
+        // Aperçu du piège : le vrai modèle qui apparaîtra sur la case visée, en fantôme.
+        this.trapGhosts = {}; // modèle -> objet fantôme
+        const addGhosts = (pieces, names) => {
+            for (const name of names) {
+                const src = name === "RuneMine" ? pieces?.Trap : pieces?.[name];
+                if (!src) continue;
+                const g = src.clone(true);
+                g.traverse((o) => {
+                    if (o.isMesh) o.material = this.ghostMat;
+                });
+                g.visible = false;
+                g.userData.flat = name !== "RuneMine";
+                this.trapGhosts[name] = g;
+                this.ghost.add(g);
+            }
+        };
+        worldPieces.then((pieces) => addGhosts(pieces, ["RuneMine"]));
+        propPieces.then((pieces) => addGhosts(pieces, ["SpikeTrap", "JawTrap", "SawTrap", "FireTrap", "TeslaTrap"]));
     }
 
     // Axe des murs, couché sur la face visée.
@@ -173,16 +185,55 @@ export class GodController extends EventTarget {
         window.addEventListener("keydown", (e) => this.#onKey(e));
     }
 
+    // Chiffres 1 à 8 : choix direct d'un pouvoir (le reste passe par les actions remappables).
     #onKey(e) {
-        if (!this.enabled || e.target instanceof HTMLInputElement) return;
+        if (!this.enabled || e.repeat || e.target instanceof HTMLInputElement) return;
         const k = e.key.toLowerCase();
         const byKey = POWER_IDS.find((id) => POWERS[id].key === k || e.code === `Digit${POWERS[id].key}`);
-        if (byKey) this.selectPower(byKey);
-        else if (k === "r") this.cycleAxis();
-        else if (this.volume && (k === "arrowup" || k === "pageup")) this.setLayer(this.layer + 1);
-        else if (this.volume && (k === "arrowdown" || k === "pagedown")) this.setLayer(this.layer - 1);
-        else return;
+        if (!byKey) return;
         e.preventDefault();
+        this.selectPower(byKey);
+    }
+
+    // Actions de l'InputManager (clavier remappé ou manette).
+    handleAction(action) {
+        if (!this.enabled) return;
+        if (action === "place") this.place();
+        else if (action === "nextPower") this.cyclePower(1);
+        else if (action === "prevPower") this.cyclePower(-1);
+        else if (action === "cycleAxis") this.cycleAxis();
+        else if (action === "layerUp" && this.volume) this.setLayer(this.layer + 1);
+        else if (action === "layerDown" && this.volume) this.setLayer(this.layer - 1);
+    }
+
+    // Viseur manette : croix à l'écran, déplacée par le stick gauche (vitesse en écrans / s).
+    #buildPadCursor() {
+        this.padCursor = document.createElement("div");
+        this.padCursor.className = "pad-cursor hidden";
+        document.body.appendChild(this.padCursor);
+    }
+
+    moveCursor(dx, dy) {
+        if (!this.enabled || (!dx && !dy)) return;
+        this.pointer.x = Math.max(-1, Math.min(1, this.pointer.x + dx));
+        this.pointer.y = Math.max(-1, Math.min(1, this.pointer.y - dy));
+        this.#pick();
+    }
+
+    // Affiche le viseur quand la manette est utilisée (la souris garde son propre pointeur).
+    showPadCursor(on) {
+        const visible = on && this.enabled;
+        this.padCursor.classList.toggle("hidden", !visible);
+        if (!visible) return;
+        const rect = this.canvas.getBoundingClientRect();
+        const x = rect.left + ((this.pointer.x + 1) / 2) * rect.width;
+        const y = rect.top + ((1 - this.pointer.y) / 2) * rect.height;
+        this.padCursor.style.transform = `translate(${x}px, ${y}px)`;
+    }
+
+    // La caméra a bougé : la case sous le viseur change même si le viseur est immobile.
+    refreshAim() {
+        if (this.enabled) this.#pick();
     }
 
     #onPointerMove(e) {
@@ -269,6 +320,15 @@ export class GodController extends EventTarget {
         this.#changed();
     }
 
+    // Manette : L1 / R1 parcourent tous les pouvoirs. Un pouvoir sans cible (Déclencher,
+    // Expansion) est seulement armé : il part au prochain appui sur « poser ».
+    cyclePower(step) {
+        const i = POWER_IDS.indexOf(this.power);
+        this.power = POWER_IDS[(i + step + POWER_IDS.length) % POWER_IDS.length];
+        this.#refreshGhost();
+        this.#changed();
+    }
+
     cycleAxis() {
         this.axisIndex = (this.axisIndex + 1) % (this.volume ? 3 : 2);
         this.#refreshGhost();
@@ -276,6 +336,7 @@ export class GodController extends EventTarget {
     }
 
     place() {
+        if (POWERS[this.power].needsCell === false) return this.net.usePower(this.power, null, this.axis);
         if (!this.hoverCell) return;
         this.net.usePower(this.power, this.hoverCell, this.axis);
     }
@@ -285,8 +346,8 @@ export class GodController extends EventTarget {
     }
 
     previewCells(cell = this.hoverCell) {
-        if (!cell) return [];
         const p = POWERS[this.power];
+        if (!cell || p.needsCell === false) return []; // pouvoir sans cible : pas d'aperçu
         const n = this.volume ? this.axis : this.map.normalAxis(cell);
         if (this.power === "wall") return straightWallCells(cell, this.axis, p.length);
         if (this.power === "rotatingWall") return rotatingWallCells(cell, n, p.arm, 0);
@@ -350,12 +411,15 @@ export class GodController extends EventTarget {
         lay(this.cursor, this.hoverCell, -0.46);
 
         // Forme propre à chaque pouvoir : mine, dalle hachurée, portail, cubes (+ cercle balayé).
-        const trap = this.power === "trap" && this.trapGhost;
+        const trapModel = this.power === "trap" ? trapModelFor(cells[0], this.map.kind) : null;
+        const trap = !!this.trapGhosts[trapModel];
         const zone = this.power === "dangerZone";
         const portal = this.power === "teleporter";
-        if (this.trapGhost) {
-            this.trapGhost.visible = !!trap;
-            if (trap) cellToWorld(cells[0], this.size, this.trapGhost.position);
+        for (const [name, g] of Object.entries(this.trapGhosts)) {
+            g.visible = name === trapModel;
+            if (!g.visible) continue;
+            cellToWorld(cells[0], this.size, g.position);
+            if (g.userData.flat) g.quaternion.setFromUnitVectors(Y_AXIS, normal);
         }
         this.portalGhost.visible = portal;
         if (portal) lay(this.portalGhost, cells[0], -0.38);

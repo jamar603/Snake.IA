@@ -16,6 +16,9 @@ Le fichier contient des pièces nommées que le jeu clone (client/render/catalog
     JawTrap     piège à mâchoires ; enfants JawTrapJawA / JawTrapJawB, charnière sur l'axe x
                 (rotation 0 = ouvert à plat, ±90° = fermé).
     SawTrap     fente et lame ; enfant SawTrapBlade (origine au moyeu, tourne autour de y).
+    FireTrap    grille de braises ; enfant FireTrapFlame (origine à la grille, le jeu l'étire
+                vers le haut quand la flamme jaillit).
+    TeslaTrap   bobine de cuivre ; enfant TeslaTrapOrb (sphère d'énergie qui flotte et crépite).
   Les matériaux *Glow sont émissifs : le jeu les fait pulser quand un Snake approche.
 
 Unités : 1 = une case de la grille. Blender (z en haut) -> glTF (y en haut).
@@ -215,6 +218,10 @@ def palette():
         "steel": material("TrapSteel", 0xdcd8ea, roughness=0.25, metallic=0.35),
         "brass": material("TrapBrass", 0xe0aa45, roughness=0.35, metallic=0.35),
         "glow": material("TrapGlow", 0xff3b4a, roughness=0.3, emission=0xff2038, strength=4.0),
+        "flame": material("TrapFlame", 0xffb347, roughness=0.4, emission=0xff6a1a, strength=6.0),
+        "flameCore": material("TrapFlameCore", 0xfff1b0, roughness=0.3, emission=0xffd36b, strength=8.0),
+        "copper": material("TrapCopper", 0xd27a45, roughness=0.35, metallic=0.35),
+        "spark": material("TrapSpark", 0xbfe8ff, roughness=0.2, emission=0x7fd4ff, strength=7.0),
     }
 
 
@@ -397,6 +404,46 @@ def build_saw_trap(m):
     return [root, blade]
 
 
+def build_fire_trap(m):
+    base_z = FACE + 0.05
+    plate = cone("plate", 0.36, 0.33, 0.1, (0, 0, base_z), m["iron"], 8)
+    pit = cone("pit", 0.24, 0.24, 0.02, (0, 0, base_z + 0.05), m["glow"], 16)
+    bars = [box("bar", (0.5, 0.035, 0.03), (0, y, base_z + 0.065), m["ironDark"], 0.008) for y in (-0.15, -0.075, 0, 0.075, 0.15)]
+    rivets = [uv_sphere("rivet", 0.028, (math.cos(a) * 0.3, math.sin(a) * 0.3, base_z + 0.05), m["brass"], (1, 1, 0.6), 8, 5) for a in [i / 8 * math.tau + 0.39 for i in range(8)]]
+    root = join([plate, pit, *bars, *rivets], "FireTrap")
+    top = base_z + 0.06
+    # Flamme : cœur clair dans une enveloppe orange, trois langues décalées (étirée par le jeu).
+    parts = [cone("flame", 0.16, 0.0, 0.5, (0, 0, top + 0.25), m["flame"], 10)]
+    parts.append(cone("core", 0.08, 0.0, 0.32, (0, 0, top + 0.16), m["flameCore"], 8))
+    for i in range(3):
+        a = i / 3 * math.tau
+        tongue = cone("tongue", 0.06, 0.0, 0.3, (math.cos(a) * 0.1, math.sin(a) * 0.1, top + 0.15), m["flame"], 6)
+        tongue.rotation_euler = (math.sin(a) * -0.3, math.cos(a) * 0.3, 0)
+        apply_transform(tongue)
+        parts.append(tongue)
+    flame = join(parts, "FireTrapFlame", origin=(0, 0, top))
+    parent(flame, root)
+    return [root, flame]
+
+
+def build_tesla_trap(m):
+    base_z = FACE + 0.05
+    plate = cone("plate", 0.3, 0.34, 0.1, (0, 0, base_z), m["iron"], 6)
+    post = cone("post", 0.07, 0.05, 0.3, (0, 0, base_z + 0.2), m["ironDark"], 10)
+    coils = [torus("coil", 0.09 - i * 0.008, 0.018, (0, 0, base_z + 0.1 + i * 0.05), m["copper"], (0, 0, 0), 16, 6) for i in range(5)]
+    feet = [cone("foot", 0.05, 0.04, 0.06, (math.cos(a) * 0.24, math.sin(a) * 0.24, base_z + 0.07), m["brass"], 6) for a in [i / 3 * math.tau for i in range(3)]]
+    ring = torus("crown", 0.12, 0.02, (0, 0, base_z + 0.36), m["brass"], (0, 0, 0), 20, 6)
+    root = join([plate, post, *coils, *feet, ring], "TeslaTrap")
+    orb_z = base_z + 0.5
+    orb = [uv_sphere("orb", 0.1, (0, 0, orb_z), m["spark"], (1, 1, 1), 16, 10)]
+    for i in range(4):
+        a = i / 4 * math.tau
+        orb.append(cone("bolt", 0.02, 0.0, 0.16, (math.cos(a) * 0.12, math.sin(a) * 0.12, orb_z), m["spark"], 4, (0, math.pi / 2, a), smooth=False))
+    o = join(orb, "TeslaTrapOrb", origin=(0, 0, orb_z))
+    parent(o, root)
+    return [root, o]
+
+
 # ---------- Export et aperçu ----------
 def export(objects):
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -457,7 +504,7 @@ def main():
         build_grapes(m),
         build_apple(m, "GoldenApple", m["gold"], m["goldLeaf"]),
     ]
-    traps = [build_spike_trap(m), build_jaw_trap(m), build_saw_trap(m)]
+    traps = [build_spike_trap(m), build_jaw_trap(m), build_saw_trap(m), build_fire_trap(m), build_tesla_trap(m)]
     roots = food + [t[0] for t in traps]
     every = food + [o for t in traps for o in t]
     for obj in roots:

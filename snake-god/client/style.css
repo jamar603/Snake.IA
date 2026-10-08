@@ -1093,11 +1093,6 @@ input[type="range"] { accent-color: var(--signal); width: 200px; }
     transition: background var(--t-fast) ease, color var(--t-fast) ease;
 }
 .chip-toggle.off { background: transparent; color: var(--muted); text-decoration: line-through; border-color: var(--line-strong); }
-.controls-ref { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 18px 0; }
-.controls-ref h4 { margin: 0 0 8px; font-size: 20px; }
-.controls-ref div:first-child h4 { color: var(--snake1); }
-.controls-ref div:last-child h4 { color: var(--god); }
-.controls-ref p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 14px; }
 #reset-settings { justify-self: start; margin-top: 8px; }
 
 /* ---------- HUD ---------- */
@@ -1486,7 +1481,6 @@ input[type="range"] { accent-color: var(--signal); width: 200px; }
     .clock { order: -1; }
     .card { min-width: 150px; }
     .custom-options { grid-template-columns: 1fr; }
-    .controls-ref { grid-template-columns: 1fr; }
     input[type="range"] { width: 130px; }
     .god-tools .hint { display: none; }
     .nav-btn span { font-size: 28px; }
@@ -1504,3 +1498,59 @@ input[type="range"] { accent-color: var(--signal); width: 200px; }
     .dialog, .nav-btn, .nav-btn::after, .mode-tab::before, .role-big::after { transition: none; }
 }
 .notice::before { content: ""; width: 6px; height: 6px; background: var(--danger); flex: none; }
+
+/* ---------- Manette ---------- */
+/* Focus toujours visible à la manette (le navigateur ne l'affiche qu'après le clavier). */
+[data-input="gamepad"] :focus { outline: 2px solid var(--signal); outline-offset: 3px; }
+[data-input="gamepad"] .power .p-key { opacity: 0; }
+[data-input="gamepad"] body { cursor: none; }
+
+/* Viseur du Snake God à la manette. */
+.pad-cursor {
+    position: fixed;
+    left: -14px;
+    top: -14px;
+    width: 28px;
+    height: 28px;
+    z-index: 9;
+    pointer-events: none;
+    background:
+        linear-gradient(var(--text) 0 0) 50% 0 / 2px 9px no-repeat,
+        linear-gradient(var(--text) 0 0) 50% 100% / 2px 9px no-repeat,
+        linear-gradient(var(--text) 0 0) 0 50% / 9px 2px no-repeat,
+        linear-gradient(var(--text) 0 0) 100% 50% / 9px 2px no-repeat;
+    filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+.pad-cursor::after { content: ""; position: absolute; left: 12px; top: 12px; width: 4px; height: 4px; background: var(--signal); }
+
+/* Paramètres > Contrôles */
+.controls-panel { display: grid; gap: 4px; padding-bottom: 8px; }
+.pad-status { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--ink-0); }
+.pad-status strong { display: block; }
+.pad-status small { color: var(--muted); font-size: 13px; }
+.pad-dot { width: 9px; height: 9px; flex: none; background: var(--faint); }
+.pad-status.on .pad-dot { background: var(--ok); }
+.inline-actions { display: flex; align-items: center; gap: 10px; }
+.bind-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+.bind-table th { text-align: left; font-family: var(--mono); font-weight: 500; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 8px 4px; }
+.bind-table td { padding: 4px; border-bottom: 1px solid var(--line); }
+.bind-table td:not(:first-child) { width: 30%; }
+.bind-group th { padding-top: 16px; color: var(--text); }
+.bind {
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    background: var(--ink-0);
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    transition: border-color var(--t-fast) ease, background var(--t-fast) ease;
+}
+@media (hover: hover) and (pointer: fine) {
+    .bind:hover { border-color: var(--text); }
+}
+.bind.waiting { border-color: var(--signal); color: var(--signal); animation: blink 0.8s steps(2) infinite; }
+.bind-note { font-size: 13px; line-height: 1.5; margin: 12px 0 4px; }
+#reset-bindings { justify-self: start; }

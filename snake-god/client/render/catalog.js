@@ -20,8 +20,11 @@ export function foodKind({ golden = false, kind, variant = 0 } = {}) {
 }
 
 // Pièges : même règle pour tous (-1 PV), apparence tirée de la case (stable, identique partout).
-// RuneMine est la mine historique (blender/build_island.py).
-export const TRAP_KINDS = ["SpikeTrap", "JawTrap", "SawTrap", "RuneMine"];
+// RuneMine est la mine historique (blender/build_island.py) ; les autres viennent de build_props.py.
+export const TRAP_KINDS = ["SpikeTrap", "JawTrap", "SawTrap", "FireTrap", "TeslaTrap", "RuneMine"];
+
+// Modèle affiché sur une case : le Cube 3D n'a que des mines (ses cases flottent dans le volume).
+export const trapModelFor = (cell, mapKind) => (mapKind === "volume" ? "RuneMine" : trapKind(cell));
 
 export function trapKind(cell) {
     let h = 2166136261;

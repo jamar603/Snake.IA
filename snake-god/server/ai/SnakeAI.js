@@ -52,8 +52,8 @@ export class SnakeAI {
         if (!nav.isOpen(cell)) return -10000;
 
         let score = 0;
-        // Espace libre : rester dans une zone assez grande pour son corps.
-        const needed = s.length + 4;
+        // Espace libre : rester dans une zone assez grande pour son corps (plafonné : voir AI).
+        const needed = Math.min(s.length + 4, AI.spaceNeededMax);
         const space = nav.space(cell, needed * 2);
         if (space < needed) score -= 400 + (needed - space) * 20;
 

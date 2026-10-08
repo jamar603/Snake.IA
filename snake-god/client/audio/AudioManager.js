@@ -17,6 +17,8 @@ export const AUDIO_DEFAULTS = {
     enabled: { music: true, ambient: true, voice: true, sfx: true, snake: true, god: true, world: true, ui: true },
 };
 
+const MAX_VOICES = 18; // départs de sons par quart de seconde, au plus
+
 // Moteur audio : contexte Web Audio, bus par catégorie (volume + coupure),
 // réverbération partagée et audio spatial 3D (auditeur = caméra).
 export class AudioManager {
@@ -25,6 +27,8 @@ export class AudioManager {
         this.ctx = null;
         this.buses = {};
         this.listeners = [];
+        this.recent = new Map(); // recette -> dernier départ (anti-doublon)
+        this.starts = []; // départs récents (limite de voix)
         // Le navigateur exige une interaction avant de jouer du son.
         const unlock = () => {
             this.#init();
@@ -134,7 +138,7 @@ export class AudioManager {
     // Sortie pour un son : bus de catégorie, éventuellement spatialisé et réverbéré.
     // Renvoie le nœud dans lequel brancher le son, ou null si l'audio n'est pas prêt.
     // `echo` : envoi vers l'écho stéréo ; `reverb` : envoi vers la réverbération.
-    output(category, { position = null, reverb = 0, echo = 0, gain = 1 } = {}) {
+    output(category, { position = null, reverb = 0, echo = 0, gain = 1, hrtf = false } = {}) {
         if (!this.ctx) return null;
         const ctx = this.ctx;
         const input = ctx.createGain();
@@ -142,7 +146,8 @@ export class AudioManager {
         let node = input;
         if (position) {
             const p = ctx.createPanner();
-            p.panningModel = "HRTF";
+            // HRTF (convolution par oreille) coûte cher : réservé aux sons qui le demandent.
+            p.panningModel = hrtf ? "HRTF" : "equalpower";
             p.distanceModel = "inverse";
             p.refDistance = 4;
             p.rolloffFactor = 0.9;
@@ -176,7 +181,22 @@ export class AudioManager {
     }
 
     // Joue une "recette" sonore : fn(ctx, out, t) qui fabrique le son.
+    // Garde-fous : rien quand l'onglet est caché (sinon les sons accumulés partent tous au
+    // retour), pas deux fois la même recette en moins de 40 ms (même délai), et au plus
+    // MAX_VOICES départs par quart de seconde (les sons d'interface et de pas sautent d'abord).
     play(category, recipe, opts = {}) {
+        if (!this.ctx || this.ctx.state !== "running" || document.hidden) return;
+        const now = performance.now();
+        const id = opts.id ?? recipe;
+        const dedupeKey = `${opts.delay ?? 0}`;
+        const last = this.recent.get(id);
+        if (last && last.key === dedupeKey && now - last.at < 40) return;
+        this.recent.set(id, { at: now, key: dedupeKey });
+        if (this.recent.size > 200) this.recent.clear();
+        while (this.starts.length && now - this.starts[0] > 250) this.starts.shift();
+        const busy = this.starts.length;
+        if (busy >= MAX_VOICES || (busy >= MAX_VOICES * 0.6 && (category === "ui" || opts.minor))) return;
+        this.starts.push(now);
         const out = this.output(category, opts);
         if (!out) return;
         recipe(this.ctx, out, this.ctx.currentTime + (opts.delay ?? 0) + 0.005);

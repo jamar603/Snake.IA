@@ -59,6 +59,7 @@ export class Hud extends EventTarget {
         };
         this.lastHp = {};
         this.showHelp = true;
+        this.input = null; // InputManager : libellés des touches / boutons
         this.#buildPowers();
         this.#buildSkills();
     }
@@ -116,6 +117,43 @@ export class Hud extends EventTarget {
         }
     }
 
+    // Libellés des commandes pour le périphérique utilisé (clavier ou manette, glyphes △ ○ × □
+    // pour une manette PlayStation), mis à jour dès que le joueur change de périphérique.
+    setInput(input) {
+        this.input = input;
+        const refresh = () => {
+            for (const id of SKILL_IDS) {
+                const label = input.label(id);
+                this.skillButtons[id].querySelector(".s-key").textContent = label;
+                this.skillButtons[id].title = `${SKILLS[id].label} (${label}) : ${SKILLS[id].description}`;
+            }
+        };
+        for (const ev of ["device", "pad"]) input.addEventListener(ev, refresh);
+        input.settings.addEventListener("change", refresh);
+        refresh();
+    }
+
+    #snakeHelp(volume) {
+        const L = (a) => this.input?.label(a) ?? "";
+        const pad = this.input?.usingPad;
+        const turn = `${L("turnLeft")} ${L("turnRight")}${pad ? " ou stick" : ""}`;
+        const skills = `${L("sprint")} ${L("shield")} ${L("phase")} : compétences`;
+        return volume
+            ? `${turn} : tourner · ${L("turnUp")} ${L("turnDown")} : monter / descendre · ${skills}`
+            : `${turn} : tourner (la face change toute seule) · ${skills}`;
+    }
+
+    #godHelp(volume) {
+        const L = (a) => this.input?.label(a) ?? "";
+        if (this.input?.usingPad) {
+            const layer = volume ? ` · ${L("layerUp")} ${L("layerDown")} : couche` : "";
+            return `Stick G : viser · ${L("place")} : poser · ${L("prevPower")} ${L("nextPower")} : pouvoir · ${L("cycleAxis")} : orientation · stick D : caméra${layer}`;
+        }
+        return volume
+            ? `Clic : poser · ${L("layerUp")} ${L("layerDown")} ou Maj + molette : couche · ${L("cycleAxis")} : axe`
+            : `Clic sur une face : poser · ${L("cycleAxis")} : orientation · glisser : tourner`;
+    }
+
     setRole(role) {
         this.role = role;
         const isGod = role === "god";
@@ -170,10 +208,7 @@ export class Hud extends EventTarget {
         const mine = state.snakes.find((s) => s.id === this.role);
         if (mine) {
             // Aide des commandes selon la map (haut / bas seulement dans le Cube 3D).
-            this.el.snakeHelp.textContent =
-                state.map?.kind === "volume"
-                    ? "← → tourner · ↑ ↓ monter / descendre · Espace, E, F : compétences"
-                    : "← → tourner (la face change toute seule) · Espace, E, F : compétences";
+            this.el.snakeHelp.textContent = this.#snakeHelp(state.map?.kind === "volume");
             this.#renderEvolution(mine);
             this.#renderSkills(mine);
         }
@@ -237,9 +272,7 @@ export class Hud extends EventTarget {
         // Cube 3D : couche visée et axe libre ; ailleurs : clic direct sur la face.
         this.el.layerTool.classList.toggle("hidden", !volume);
         this.el.layerValue.textContent = layer;
-        this.el.godKeys.textContent = volume
-            ? "Clic : poser · ↑ ↓ ou Maj + molette : couche · R : axe"
-            : "Clic sur une face : poser · R : orientation · glisser : tourner";
+        this.el.godKeys.textContent = this.#godHelp(volume);
         for (const id of POWER_IDS) this.powerButtons[id].classList.toggle("selected", id === power);
         // Pouvoir choisi : ce qu'il fait, ou pourquoi il ne peut pas partir ici.
         const help = this.el.godHint;

@@ -1,42 +1,22 @@
-import { SKILLS, SKILL_IDS } from "/shared/config.js";
-
-// Clavier (QWERTY et AZERTY) et gestes tactiles -> virages relatifs du Snake.
-// Contrôle classique : gauche et droite seulement (la map gère les faces du cube).
-const KEY_TO_TURN = {
-    arrowleft: "left", q: "left", a: "left",
-    arrowright: "right", d: "right",
-};
-// Cube 3D (version classique) : haut et bas en plus.
-const KEY_TO_VERTICAL = {
-    arrowup: "up", z: "up", w: "up",
-    arrowdown: "down", s: "down",
-};
-
-// Compétences : touche dédiée, ou chiffre de la rangée du haut (e.code : marche en AZERTY).
-function skillFor(e) {
-    const k = e.key.toLowerCase();
-    return SKILL_IDS.find((id, i) => SKILLS[id].keys.includes(k) || e.code === `Digit${i + 1}`);
-}
+// Snake : actions de l'InputManager (clavier, manette) et gestes tactiles -> virages relatifs.
+// Contrôle classique : gauche et droite seulement (la map gère les faces du cube) ;
+// haut et bas en plus dans le Cube 3D.
+const TURNS = { turnLeft: "left", turnRight: "right", turnUp: "up", turnDown: "down" };
+const SKILL_ACTIONS = { sprint: "sprint", shield: "shield", phase: "phase" };
 
 export class SnakeInput {
-    constructor(onTurn, onSkill = () => {}) {
+    constructor(input, onTurn, onSkill = () => {}) {
         this.onTurn = onTurn;
         this.onSkill = onSkill;
         this.vertical = false; // haut / bas actifs (Cube 3D)
         this.enabled = false;
 
-        window.addEventListener("keydown", (e) => {
-            if (!this.enabled || e.repeat || e.target instanceof HTMLInputElement) return;
-            const skill = skillFor(e);
-            if (skill) {
-                e.preventDefault();
-                this.onSkill(skill);
-                return;
-            }
-            const k = e.key.toLowerCase();
-            const turn = KEY_TO_TURN[k] ?? (this.vertical ? KEY_TO_VERTICAL[k] : null);
-            if (!turn) return;
-            e.preventDefault();
+        input.addEventListener("action", (e) => {
+            if (!this.enabled) return;
+            const { action } = e.detail;
+            if (SKILL_ACTIONS[action]) return this.onSkill(SKILL_ACTIONS[action]);
+            const turn = TURNS[action];
+            if (!turn || ((turn === "up" || turn === "down") && !this.vertical)) return;
             this.onTurn(turn);
         });
 

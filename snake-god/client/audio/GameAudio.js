@@ -1,6 +1,6 @@
 import { MAPS } from "/shared/config.js";
 import { chebyshev, key, rotatingWallCells } from "/shared/grid.js";
-import { foodKind, trapKind } from "../render/catalog.js";
+import { foodKind, trapModelFor } from "../render/catalog.js";
 import { Ambient } from "./Ambient.js";
 import { Music } from "./Music.js";
 import { GodSounds } from "./sounds/god.js";
@@ -59,6 +59,11 @@ export class GameAudio {
             lastHover = btn;
             this.#play("ui", UISounds.hover);
         });
+        // Manette : le focus qui se déplace sonne comme un survol.
+        root.addEventListener("focusin", (e) => {
+            if (document.documentElement.dataset.input !== "gamepad" || !e.target.closest?.("button")) return;
+            this.#play("ui", UISounds.hover);
+        });
         root.addEventListener("mouseout", (e) => {
             if (e.target.closest?.("button") === lastHover) lastHover = null;
         });
@@ -111,7 +116,7 @@ export class GameAudio {
         if (mine?.alive && prev && state.status === "playing") {
             const before = prev.snakes.find((s) => s.id === myRole);
             if (before?.body[0] && mine.body[0] && key(before.body[0]) !== key(mine.body[0])) {
-                this.#play("snake", (c, o, t) => SnakeSounds.move(c, o, t, { alt: state.tick % 2 === 0 }));
+                this.#play("snake", (c, o, t) => SnakeSounds.move(c, o, t, { alt: state.tick % 2 === 0 }), { id: "move", minor: true });
             }
         }
 
@@ -121,7 +126,7 @@ export class GameAudio {
         const pulse = Math.max(low ? 0.6 : 0, danger);
         if (pulse > 0.3 && now - this.lastHeartbeat > (pulse > 0.8 ? 650 : 1000)) {
             this.lastHeartbeat = now;
-            this.#play("snake", (c, o, t) => SnakeSounds.heartbeat(c, o, t, { strength: pulse }));
+            this.#play("snake", (c, o, t) => SnakeSounds.heartbeat(c, o, t, { strength: pulse }), { id: "heartbeat" });
         }
 
         // Vision divine : nouvelle révélation -> notification exclusive au Snake God.
@@ -179,7 +184,7 @@ export class GameAudio {
                     // Bouchée propre à l'aliment (croquant, juteux, viande...) : voir catalog.js.
                     const flavor = foodKind(ev).flavor;
                     const recipe = ev.golden ? SnakeSounds.golden : (c, o, t) => SnakeSounds.eat(c, o, t, { combo, flavor });
-                    this.#play("snake", recipe, { position, gain, echo: mine ? 0.25 : 0 });
+                    this.#play("snake", recipe, { position, gain, echo: mine ? 0.25 : 0, id: `eat:${ev.snake}` });
                     if (mine) this.#play("snake", SnakeSounds.grow, { delay: 0.12, gain: 0.7 });
                     break;
                 }
@@ -187,8 +192,8 @@ export class GameAudio {
                     this.#play("snake", SnakeSounds.hurt, { position, gain });
                     if (ev.cause === "trap") {
                         // Même modèle que celui affiché (le Cube 3D n'a que des mines).
-                        const kind = this.mapKind === "volume" ? "RuneMine" : trapKind(ev.cells[0]);
-                        this.#play("snake", (c, o, t) => SnakeSounds.trapHit(c, o, t, { kind }), { position, gain });
+                        const kind = trapModelFor(ev.cells[0], this.mapKind);
+                        this.#play("snake", (c, o, t) => SnakeSounds.trapHit(c, o, t, { kind }), { position, gain, id: `trap:${ev.snake}` });
                     }
                     else if (["boundary", "wall", "snake", "headOn", "crushed"].includes(ev.cause)) this.#play("snake", SnakeSounds.collision, { position, gain });
                     break;

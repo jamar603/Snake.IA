@@ -7,6 +7,8 @@ import { MATCH_STATUS, S2C } from "/shared/protocol.js";
 import { AudioManager } from "./audio/AudioManager.js";
 import { GameAudio } from "./audio/GameAudio.js";
 import { GodController } from "./input/GodController.js";
+import { InputManager } from "./input/InputManager.js";
+import { MenuNavigator } from "./input/MenuNavigator.js";
 import { SnakeInput } from "./input/SnakeInput.js";
 import { MultiplayerClient } from "./net/MultiplayerClient.js";
 import { CameraController } from "./render/Cameras.js";
@@ -19,6 +21,7 @@ import { PostFX } from "./render/PostFX.js";
 import { SnakeView } from "./render/SnakeView.js";
 import { WorldController } from "./render/WorldController.js";
 import { Settings } from "./settings.js";
+import { ControlsPanel } from "./ui/ControlsPanel.js";
 import { renderEnd } from "./ui/EndScreen.js";
 import { Hud } from "./ui/Hud.js";
 import { UIManager } from "./ui/UIManager.js";
@@ -52,10 +55,30 @@ const net = new MultiplayerClient(() => ({ name: settings.profile.name, cosmetic
 const ui = new UIManager(settings);
 const hud = new Hud();
 const god = new GodController({ scene, camera, canvas, size: GRID_SIZE, net, map });
+// Entrées centralisées (clavier remappable, manettes dont DualSense) : voir InputManager.
+const input = new InputManager(settings);
 const snakeInput = new SnakeInput(
+    input,
     (turn) => net.turn(turn),
     (skill) => net.useSkill(skill)
 );
+hud.setInput(input);
+new ControlsPanel(input, document.getElementById("controls-panel"));
+// Menus, boîte de dialogue et écran de fin à la manette (croix / stick, × valider, ○ retour).
+const menuNav = new MenuNavigator(input, {
+    active: () => mode === "menu" || ui.screen === "end" || quitOpen(),
+    back: () => (quitOpen() ? setQuitDialog(false) : document.querySelector(".screen:not(.hidden) [data-back], .screen:not(.hidden) #leave-room-btn")?.click()),
+});
+input.addEventListener("action", (e) => {
+    const { action } = e.detail;
+    if (action === "pause") {
+        if (mode !== "game" || ui.screen === "end") return;
+        setQuitDialog(!quitOpen());
+        return;
+    }
+    if (!quitOpen()) god.handleAction(action);
+});
+input.addEventListener("device", () => hud.renderGodTools(god));
 const audio = new AudioManager(settings);
 const gameAudio = new GameAudio(audio, (c) => cellToWorld(c, space));
 gameAudio.bindInterface();
@@ -143,11 +166,7 @@ document.getElementById("quit-confirm").addEventListener("click", () => {
     enterMenu("main");
 });
 quitDialog.addEventListener("click", (e) => e.target === quitDialog && setQuitDialog(false));
-window.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || mode !== "game" || ui.screen === "end") return;
-    e.preventDefault();
-    setQuitDialog(!quitOpen());
-});
+// Échap / Options : action « pause » de l'InputManager (voir plus haut).
 god.addEventListener("change", () => hud.renderGodTools(god));
 hud.renderGodTools(god);
 
@@ -317,6 +336,7 @@ function playEvents(s, size) {
             case "foodEaten":
                 view?.onEat(ev.golden);
                 if (ev.snake === myRole && cameras.mode === "snake") cameras.snake.punch(ev.golden ? 0.45 : 0.18);
+                if (ev.snake === myRole) input.rumble(ev.golden ? 0.5 : 0.18, ev.golden ? 150 : 50);
                 // Éclats de la couleur de l'aliment croqué (pomme rouge, ananas jaune...).
                 effects.burst(p, foodKind(ev).color, { count: ev.golden ? 70 : 28, speed: ev.golden ? 4 : 2.6 });
                 if (!ev.golden) effects.ring(p, foodKind(ev).color, { size: 0.9, life: 0.4, normal: normalOf(ev.cells[0]) });
@@ -328,13 +348,16 @@ function playEvents(s, size) {
                 if (ev.snake === myRole) {
                     shake(0.45);
                     postfx.pulse(0.8);
+                    input.rumble(ev.cause === "trap" ? 1 : 0.75, 220);
                 } else if (ev.byGod && myRole === "god") {
                     // Le dieu sent que son piège a porté : retour court, moins fort que pour la victime.
                     shake(0.25);
                     postfx.pulse(0.4);
+                    input.rumble(0.35, 110);
                 }
                 break;
             case "eliminated":
+                if (ev.snake === myRole) input.rumble(1, 500);
                 effects.explosion(p, { color: glow, scale: 1.8, debris: 30, debrisColor: glow });
                 effects.burst(p, glow, { count: 120, speed: 7, life: 1.4, size: 0.35, endColor: 0x2a1040 });
                 effects.ring(p, glow, { size: 4, life: 1 });
@@ -463,8 +486,10 @@ function updateControls() {
     const playing = mode === "game" && state && (state.status === MATCH_STATUS.PLAYING || state.status === MATCH_STATUS.COUNTDOWN);
     const mySnake = state?.snakes.find((s) => s.id === myRole);
     const snakeMode = playing && mySnake?.alive;
-    snakeInput.enabled = !!snakeMode;
+    snakeInput.enabled = !!snakeMode && !quitOpen();
     god.setEnabled(!!playing && myRole === "god" && state.status === MATCH_STATUS.PLAYING);
+    // Contexte des entrées : une touche ne sert qu'à une chose à la fois (↑ : virage ou couche).
+    input.setContext(mode === "menu" ? "menu" : myRole === "god" ? "god" : myRole ? "snake" : "spectate");
 
     cameras.setMode(mode === "menu" ? "menu" : snakeMode ? "snake" : "god");
 }
@@ -488,6 +513,16 @@ function frame() {
     const now = performance.now(); // même horloge que stateTime
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+
+    // Manette : boutons et sticks lus une fois par image (l'API Gamepad n'a pas d'événements).
+    const pad = input.poll();
+    if (mode === "game" && cameras.mode === "god" && !quitOpen()) {
+        god.moveCursor(pad.moveX * dt * 1.1, pad.moveY * dt * 1.1);
+        cameras.god.orbit(pad.lookX * dt * 2.2, pad.lookY * dt * 1.4);
+        cameras.god.zoom(1 + pad.zoom * dt * 1.2);
+        if (pad.lookX || pad.lookY || pad.zoom) god.refreshAim();
+    }
+    god.showPadCursor(input.usingPad && mode === "game" && !quitOpen());
 
     env.update(now, dt);
     world.setCameraFade(cameras.mode === "snake" ? camera.position : null);
@@ -519,6 +554,8 @@ requestAnimationFrame(frame);
 // ---------- Démarrage ----------
 // Raccourci de test : ?play=snake1|snake2|god|demo lance une partie rapide.
 const params = new URLSearchParams(location.search);
+// Outils de test (?debug) : état et entrées accessibles depuis la console du navigateur.
+if (params.has("debug")) window.snakora = { input, god, get state() { return state; }, get role() { return myRole; }, get mode() { return mode; } };
 net.on(S2C.WELCOME, () => {
     const play = params.get("play");
     if (play && !room) {

@@ -20,6 +20,8 @@ export const DEFAULT_SETTINGS = {
     matchDuration: 90, // secondes, 0 = illimitée (solo, démonstration, salons créés)
     matchMap: "cube", // "cube" (mode principal) ou "world" (terrain plat, plus accessible)
     audio: AUDIO_DEFAULTS, // volumes et coupures par catégorie
+    vibration: true, // vibrations de la manette (si le navigateur les gère)
+    bindings: {}, // raccourcis remappés : { keys: { action: [...] }, pad: { action: [...] } }
 };
 
 // Paramètres et profil du joueur, gardés dans le navigateur.

@@ -118,7 +118,7 @@ export class GameManager {
         this.grid.addOccupant((k) => this.traps.has(k));
         this.grid.addOccupant((k) => this.food.has(k));
         this.grid.addOccupant((k) => this.teleporters.has(k));
-        this.grid.addOccupant((k) => this.snakes.some((s) => s.body.some((c) => key(c) === k)));
+        this.grid.addOccupant((k) => this.#snakeCells().has(k));
 
         // Départs éloignés (faces opposées du cube, coins opposés du terrain).
         const spawns = this.grid.map.spawnPoints();
@@ -359,6 +359,21 @@ export class GameManager {
         if (sprinting.length) this.#step(sprinting);
     }
 
+    // Cases occupées par les corps, recalculées seulement quand un corps a changé.
+    // Un corps change toujours par sa tête, sa queue, sa longueur ou un nouveau tableau
+    // (avancée, téléporteur, réapparition, expansion) : comparer ces références suffit.
+    // Avant : chaque requête d'occupation reconstruisait la clé de chaque segment
+    // (jusqu'à 400 essais × 1 000 segments pour placer une nourriture).
+    #snakeCells() {
+        const sig = this.snakes.flatMap((s) => [s.body, s.body.length, s.body[0], s.body[s.body.length - 1]]);
+        const cache = this.bodyCache;
+        if (cache && cache.sig.length === sig.length && cache.sig.every((v, i) => v === sig[i])) return cache.cells;
+        const cells = new Set();
+        for (const sn of this.snakes) for (const c of sn.body) cells.add(key(c));
+        this.bodyCache = { sig, cells };
+        return cells;
+    }
+
     // Phase : le Snake traverse murs, pièges et corps (pas les bords).
     #phasing(s) {
         return s.skills.isActive("phase", this.now);
@@ -441,7 +456,7 @@ export class GameManager {
         const exit = this.teleporters.exitFor(entry);
         if (!exit) return;
         const k = key(exit);
-        if (this.walls.isWall(k) || this.snakes.some((o) => o.body.some((c) => key(c) === k))) return;
+        if (this.walls.isWall(k) || this.#snakeCells().has(k)) return;
         const map = this.grid.map;
         s.body[0] = exit;
         if (map.kind !== "volume") {

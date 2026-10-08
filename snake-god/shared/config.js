@@ -237,4 +237,7 @@ export const AI = {
     godThinkMs: [700, 1500], // délai entre deux décisions du dieu
     godFirstActionMs: 6000, // laisse aux Snakes le temps de prendre leurs marques
     godPhaseTempo: { 1: 1.6, 2: 1.2, 3: 1, 4: 0.85 }, // le dieu IA accélère avec les phases
+    // Espace libre exigé avant d'entrer dans une zone : longueur du corps + 4, plafonnée.
+    // Sans plafond, un Snake géant explore toute la map trois fois par tick (ticks à 150 ms+).
+    spaceNeededMax: 120,
 };

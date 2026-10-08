@@ -149,6 +149,9 @@ export class Music {
         if (ctx.state !== "running") return;
         this.level += (this.target - this.level) * 0.02;
         const t = ctx.currentTime;
+        // Onglet caché : le minuteur a été ralenti par le navigateur. On reprend le fil
+        // maintenant au lieu de rejouer d'un coup toutes les notes manquées.
+        if (this.nextTime < t - 0.1) this.nextTime = t + 0.05;
         for (const [id, threshold] of Object.entries(LAYERS)) {
             const on = this.level >= threshold && (this.mode !== "end" || id === "keys" || id === "melody");
             this.layers[id].gain.setTargetAtTime(on ? 1 : 0, t, 1.4);

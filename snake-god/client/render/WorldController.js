@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { AXES, key, rotatingWallCells, rotatingWallOffsets } from "/shared/grid.js";
 import { createMap } from "/shared/maps/index.js";
 import { propPieces, worldPieces } from "./assets.js";
-import { foodKind, trapKind } from "./catalog.js";
+import { foodKind, trapModelFor } from "./catalog.js";
 import { CUBE_GAP, cellToWorld, vec } from "./coords.js";
 import { PHASE_COLORS } from "./Environment.js";
 import { circuitTextures, glowTexture, hazardTexture } from "./textures.js";
@@ -492,9 +492,8 @@ export class WorldController {
     // Chaque case a son modèle de piège (catalog.js) : plaque à pointes, mâchoires, scie
     // ou mine runique. Même effet pour tous : seule l'apparence change.
     #createTrap(item) {
-        const kind = trapKind(item.cell);
-        // Cube 3D : les cases flottent dans le volume, seule la mine (qui flotte aussi) y a sa place.
-        if (kind !== "RuneMine" && this.map.kind !== "volume" && this.models?.[kind]) return this.#createFlatTrap(kind);
+        const kind = trapModelFor(item.cell, this.map.kind);
+        if (kind !== "RuneMine" && this.models?.[kind]) return this.#createFlatTrap(kind);
         if (this.pieces?.Trap) return this.#createStoneTrap();
         const g = new THREE.Group();
         g.add(new THREE.Mesh(this.geo.mineBody, this.mats.mine));
@@ -538,7 +537,10 @@ export class WorldController {
             spikes: part("SpikeTrapSpikes"),
             jaws: [part("JawTrapJawA"), part("JawTrapJawB")].filter(Boolean),
             blade: part("SawTrapBlade"),
+            flame: part("FireTrapFlame"),
+            orb: part("TeslaTrapOrb"),
         });
+        if (g.userData.orb) g.userData.orbY = g.userData.orb.position.y;
         if (g.userData.spikes) g.userData.spikesY = g.userData.spikes.position.y;
         return g;
     }
@@ -929,6 +931,19 @@ export class WorldController {
             u.blade.rotation.z -= dt * (4 + alert * 16);
             u.blade.position.x = Math.sin(t * (1.2 + alert * 2)) * 0.12;
         }
+        // Feu : braises qui couvent, petite flamme vacillante qui grandit quand un Snake approche.
+        if (u.flame) {
+            const flicker = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 9.7);
+            const h = (0.12 + alert * 0.55) * flicker;
+            u.flame.scale.set(0.5 + alert * 0.4, Math.max(0.05, h), 0.5 + alert * 0.4);
+            u.flame.rotation.y += dt * 2;
+        }
+        // Tesla : l'orbe flotte, tourne et crépite (plus vite quand un Snake approche).
+        if (u.orb) {
+            u.orb.position.y = u.orbY + Math.sin(t * 2.2) * 0.03;
+            u.orb.rotation.y += dt * (2 + alert * 10);
+            u.orb.scale.setScalar(1 + alert * 0.25 * Math.abs(Math.sin(t * 31)));
+        }
     }
 
     // Sorties : aliment croqué (gonfle puis disparaît), piège qui claque ou se replie.
@@ -946,6 +961,8 @@ export class WorldController {
                 if (u.spikes) u.spikes.position.y = u.spikesY + 0.04 * snap;
                 u.jaws?.forEach((jaw, i) => (jaw.rotation.x = (i ? -1 : 1) * 1.5 * snap));
                 if (u.blade) u.blade.rotation.z -= dt * 40;
+                if (u.flame) u.flame.scale.set(1.1, 1.6 * snap + 0.1, 1.1); // la flamme jaillit
+                if (u.orb) u.orb.scale.setScalar(1 + snap * 0.8);
                 if (u.rune) u.rune.emissiveIntensity = 12;
                 const shrink = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
                 g.scale.setScalar(Math.max(0.001, (u.flat ? 1 : 1 + 0.4 * snap) * shrink));

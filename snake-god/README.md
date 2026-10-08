@@ -37,6 +37,8 @@ Ou double-clique sur `lancer.bat`. Ouvre ensuite http://localhost:8080.
 Raccourcis de test : `http://localhost:8080/?play=snake1` (ou `snake2`, `god`, `demo`) lance directement une partie rapide (ajouter `&map=volume` pour le Cube 3D classique, `&map=world` pour le terrain plat) ; `?menu=mode` (ou `online`, `customize`, `settings`) ouvre directement un écran.
 En partie : bouton **Quitter** (ou Échap) à tout moment, avec confirmation ; l'IA prend ta place.
 
+Outils de test : `?debug` expose l'état de la partie et les entrées dans la console du navigateur (`window.snakora`).
+
 Options du serveur : `MATCH_SECONDS=40` (durée par défaut des salons ; 90 s sinon), `COUNTDOWN_SECONDS=10` (compte à rebours), `PORT=8081`.
 
 Si la connexion est perdue, l'IA prend le relais ; la page se reconnecte toute seule et le joueur retrouve son salon et son rôle (jeton conservé par onglet).
@@ -53,15 +55,25 @@ Si la connexion est perdue, l'IA prend le relais ; la page se reconnecte toute s
 **Snake God** (vue d'ensemble) :
 - 1 à 8 : Piège, Mur, Mur rotatif, Démolition, Déclencher, Zone dangereuse, Téléporteur, Expansion
 - Clic directement sur une face du cube (ou sur le terrain) : poser le pouvoir (aperçu violet = possible, rouge = impossible, avec la raison)
-- R : orientation des murs sur la face
+- R : orientation des murs sur la face · Tab : pouvoir suivant
 - Glisser : tourner la vue, molette : zoom
+
+**Manette** (Xbox, PS5 DualSense, PS4 DualShock, Switch Pro et manettes compatibles) : détectée automatiquement au premier bouton ; les aides affichent ses propres boutons (△ ○ × □ pour PlayStation).
+- Snake : croix ou stick gauche pour tourner (un coup de stick = un virage) ; × / A Sprint, ○ / B Bouclier, □ / X Phase (R2 aussi pour le Sprint)
+- Snake God : stick gauche pour viser, × / A pour poser, L1 / R1 pour changer de pouvoir (Déclencher et Expansion partent au prochain ×), △ / Y orientation, croix ↑ ↓ couche (Cube 3D), stick droit pour tourner la vue, L2 / R2 pour zoomer
+- Options / Menu : quitter la partie ; dans les menus, croix ou stick pour se déplacer, × pour valider, ○ pour revenir
+- Vibrations aux dégâts, aux pièges et aux repas (si le navigateur et la manette les gèrent, désactivables)
+
+**Paramètres > Contrôles** : manette détectée, vibrations, et remappage de chaque action au clavier et à la manette (clic sur le raccourci, puis la nouvelle touche ; Échap annule). Clavier et manette marchent en même temps, sans conflit : chaque touche n'a qu'un rôle selon le contexte (Snake, dieu ou menu).
+
+Les gâchettes adaptatives, le gyroscope et le pavé tactile de la DualSense ne sont pas exposés par l'API Gamepad des navigateurs : ils ne sont pas utilisés, pour garder un support stable partout.
 
 ## Règles
 
 - Mur, obstacle, corps d'un Snake, choc frontal ou bord du terrain WORLD : -1 PV puis réapparition ailleurs, avec 1,8 s d'invulnérabilité (le Snake clignote et traverse les autres Snakes).
 - Piège : -1 PV, le piège disparaît, le Snake continue.
 - Mur rotatif : pivote de 90° toutes les 2,2 s et écrase ce qui se trouve sur son passage (-1 PV). Les cases balayées rougissent 0,7 s avant.
-- Piège : quatre modèles (plaque à pointes, mâchoires, scie, mine runique), tirés selon la case, même effet pour tous. Il s'éveille quand ton Snake approche (pointes qui se dressent, mâchoires qui tremblent, scie qui s'emballe) et claque quand il se déclenche.
+- Piège : six modèles (plaque à pointes, mâchoires, scie, bouche de feu, bobine Tesla, mine runique), tirés selon la case, même effet pour tous ; l'aperçu du dieu montre le modèle qui apparaîtra. Il s'éveille quand ton Snake approche (pointes qui se dressent, mâchoires qui tremblent, scie qui s'emballe) et claque quand il se déclenche.
 - Zone dangereuse et impact de météore : -1 PV à qui s'y trouve une fois l'avertissement passé.
 - 0 PV : Snake éliminé.
 - Le dieu ne peut pas poser de piège ou de mur à une case ou moins d'une tête.
@@ -137,7 +149,7 @@ Tout le son est synthétisé en direct (Web Audio API), sans fichier audio, dans
 - **Musique dynamique** générative (chillhop) : piano électrique en accords de septième, basse ronde, batterie boom-bap avec swing, charleston, shaker, thème à la kalimba, contre-chant de marimba et montées douces. Les couches entrent et sortent en fondu, le tempo accélère (78 → 112 BPM) et l'harmonie change : balade (phase 1), groove (phases 2 et 3), tension (phase 4 et 20 dernières secondes). Les changements de phase et les expansions déclenchent une montée de filtre puis un impact (cymbale douce, basse, carillon).
 - **Combo** : des repas enchaînés jouent une petite mélodie qui monte, note après note.
 - **Nourriture** : chaque aliment a sa bouchée (croquant pour la pomme et la carotte, juteux pour l'ananas, grosse bouchée pour la viande, « boing » pour le champignon, bulle pour les cerises et le raisin).
-- **Pièges** : un son par modèle (« shling » des pointes, clac des mâchoires, vrombissement de la scie, « pouf » de la mine).
+- **Pièges** : un son par modèle (« shling » des pointes, clac des mâchoires, vrombissement de la scie, « fwoosh » du feu, zap de la bobine Tesla, « pouf » de la mine).
 - **Expansion du cube** : glissando de harpe qui accélère, petits « tocs » de construction, gong doux et accord final.
 - **Snakes** : déplacement, manger, fruit doré, croissance, évolution, perte de PV (« bonk »), récupération de PV, collision, réapparition, mort. Chaque son varie légèrement à chaque fois.
 - **Snake God** : un magicien farceur, un son reconnaissable par pouvoir (piège, mur, mur rotatif et ses rotations, démolition, zone, déclenchement).
@@ -207,8 +219,11 @@ client/
   render/Cameras.js       CameraController : caméra Snake (anticipe les arêtes), caméra du dieu, caméra des menus
   render/MenuStage.js     décor animé des menus et aperçu de personnalisation
   render/textures.js      textures procédurales (peaux, circuits, runes)
-  input/SnakeInput.js     clavier / tactile des Snakes
-  input/GodController.js  pouvoir, clic sur la surface, orientation, aperçu
+  input/InputManager.js   entrées centralisées : actions, raccourcis remappables, manettes, glyphes, vibrations
+  input/MenuNavigator.js  menus à la manette (focus directionnel)
+  input/SnakeInput.js     actions et gestes tactiles -> virages et compétences des Snakes
+  input/GodController.js  pouvoir, clic ou viseur manette sur la surface, orientation, aperçu
+  ui/ControlsPanel.js     Paramètres > Contrôles (remappage, manette, vibrations)
   audio/AudioManager.js   contexte audio, bus par catégorie, réverbération, audio spatial, annonceur
   audio/Music.js          musique générative en couches
   audio/Ambient.js        brise, vinyle, carillons à vent, bourdon de fin de monde
@@ -223,6 +238,13 @@ test/                     tests des règles, de l'IA et du multijoueur (npm test
 
 Ajouter un pouvoir : le déclarer dans `POWERS` (`shared/config.js`), écrire sa validation et son exécution dans `GodPowerSystem`, son aperçu dans `GodController.previewCells` et son icône dans `client/ui/icons.js`.
 
+## Performances
+
+- Snake très long : le corps est un tube reconstruit à chaque image. Ses tampons grandissent avec le Snake (plus de queue tronquée au-delà de ~116 cases) et sa subdivision baisse quand il s'allonge (au plus 1 500 anneaux), sans aucune allocation par image : ~1,2 ms à 150 cases, ~1,7 ms à 1 000. Les trajectoires des segments sont préparées une fois par tick, pas à chaque image.
+- Serveur : les cases occupées par les corps sont mises en cache (recalcul seulement quand un corps change) et l'IA plafonne sa recherche d'espace libre (`AI.spaceNeededMax`). Avec deux Snakes de 1 000 cases : ~12 ms par tick en moyenne sur le CUBE (tick de 190 à 240 ms). Mesure : `node test/perf.mjs`.
+- Audio : rien n'est joué onglet caché, pas de doublon à moins de 40 ms, au plus 18 départs par quart de seconde, spatialisation légère (equalpower) ; la musique reprend le fil au retour sur l'onglet au lieu de rejouer les notes manquées.
+- Manette lue à 125 Hz, indépendamment de la fréquence d'image (aucun appui manqué si le rendu ralentit).
+
 ## Modèles 3D (Blender)
 
 Les modèles sont générés par des scripts Blender reproductibles (aucun fichier .blend à maintenir) :
@@ -233,7 +255,7 @@ Les modèles sont générés par des scripts Blender reproductibles (aucun fichi
 ```
 
 - `build_island.py` -> `client/assets/island.glb` : île, dalles, décors, cadre du cube, mine runique.
-- `build_props.py` -> `client/assets/props.glb` : nourriture (pomme, ananas, viande, cerises, carotte, champignon, raisin, pomme dorée) et pièges (plaque à pointes, mâchoires, scie). Les pièces mobiles des pièges sont des objets enfants nommés, animés par le jeu.
+- `build_props.py` -> `client/assets/props.glb` : nourriture (pomme, ananas, viande, cerises, carotte, champignon, raisin, pomme dorée) et pièges (plaque à pointes, mâchoires, scie, bouche de feu, bobine Tesla). Les pièces mobiles des pièges sont des objets enfants nommés, animés par le jeu.
 - `build_snake.py` -> `client/assets/snake.glb`.
 
 Le serveur tire l'apparence de chaque aliment (`variant`, purement cosmétique) ; le modèle de piège dépend de la case. Ajouter un aliment : le modeler dans `build_props.py`, puis l'ajouter à `FOOD_KINDS` (`client/render/catalog.js`) avec sa couleur et sa saveur sonore.

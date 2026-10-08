@@ -3,8 +3,15 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { SKINS } from "/shared/cosmetics.js";
 import { glowTexture, scaleNormalTexture, snakeSkinTextures } from "./textures.js";
 
-const MAX_RINGS = 700;
+// Anneaux du tube : la capacité grandit avec le Snake (plus de queue tronquée au-delà
+// d'environ 116 cases), et la subdivision baisse quand il devient très long pour garder
+// un coût par image borné (RING_BUDGET anneaux au plus, sauf corps immense).
+const START_RINGS = 700;
+const RING_BUDGET = 1500;
 const RADIAL = 24;
+// Cosinus et sinus autour du tube, calculés une fois (au lieu de 2 × 25 par anneau et par image).
+const RING_COS = Float32Array.from({ length: RADIAL + 1 }, (_, j) => Math.cos((j / RADIAL) * Math.PI * 2));
+const RING_SIN = Float32Array.from({ length: RADIAL + 1 }, (_, j) => Math.sin((j / RADIAL) * Math.PI * 2));
 const UV_PER_UNIT = 0.9; // u de la peau par unité de longueur (corps et crâne)
 const GAP = 1.8; // au-delà, deux points du chemin ne se touchent pas (téléporteur)
 const easeOut = (t) => 1 - Math.pow(1 - t, 4);
@@ -57,7 +64,8 @@ const skullReady = new GLTFLoader()
         return geo;
     })
     .catch((err) => console.warn("Crâne introuvable, tête simple utilisée :", err));
-const SUBDIV = 6; // échantillons par case de grille
+const SUBDIV = 6; // échantillons par case de grille (Snake court)
+const MIN_SUBDIV = 2; // jamais moins : les virages restent arrondis
 const FIN_MAX = 90;
 
 // Modèle 3D d'un Snake : corps tubulaire continu (reconstruit à chaque image
@@ -79,7 +87,10 @@ export class SnakeModel {
         this.skills = { sprint: false, shield: false, phase: false, shieldMs: 0 };
         this.shieldT = 0; // 0 -> 1 : apparition de la bulle
         this.phaseT = 0;
-        this.samples = [];
+        this.samples = []; // réserve de Vector3 réutilisés d'une image à l'autre
+        this.sampleCount = 0;
+        this.frames = []; // repères du corps (centre, tangente, normale, rayon), réutilisés
+        this.capacity = 0;
         this.length = 0;
 
         this.#buildBody();
@@ -91,24 +102,6 @@ export class SnakeModel {
 
     // ---------- Construction ----------
     #buildBody() {
-        const verts = MAX_RINGS * (RADIAL + 1);
-        this.posArr = new Float32Array(verts * 3);
-        this.nrmArr = new Float32Array(verts * 3);
-        this.uvArr = new Float32Array(verts * 2);
-        const index = [];
-        for (let i = 0; i < MAX_RINGS - 1; i++) {
-            for (let j = 0; j < RADIAL; j++) {
-                const a = i * (RADIAL + 1) + j;
-                const b = a + RADIAL + 1;
-                index.push(a, b, a + 1, b, b + 1, a + 1);
-            }
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(this.posArr, 3).setUsage(THREE.DynamicDrawUsage));
-        geo.setAttribute("normal", new THREE.BufferAttribute(this.nrmArr, 3).setUsage(THREE.DynamicDrawUsage));
-        geo.setAttribute("uv", new THREE.BufferAttribute(this.uvArr, 2).setUsage(THREE.DynamicDrawUsage));
-        geo.setIndex(index);
-        geo.setDrawRange(0, 0);
         // Écailles en relief (normal map) et vernis léger : la peau accroche la lumière.
         this.bodyMat = new THREE.MeshPhysicalMaterial({
             roughness: 0.45,
@@ -119,10 +112,49 @@ export class SnakeModel {
             clearcoat: 0.35,
             clearcoatRoughness: 0.35,
         });
-        this.body = new THREE.Mesh(geo, this.bodyMat);
+        this.body = new THREE.Mesh(new THREE.BufferGeometry(), this.bodyMat);
         this.body.frustumCulled = false;
         this.body.castShadow = true;
         this.group.add(this.body);
+        this.#ensureCapacity(START_RINGS);
+    }
+
+    // Tampons du tube pour `rings` anneaux au moins (capacité doublée si besoin).
+    #ensureCapacity(rings) {
+        if (rings <= this.capacity) return;
+        const cap = Math.max(rings, this.capacity * 2);
+        const verts = cap * (RADIAL + 1);
+        this.posArr = new Float32Array(verts * 3);
+        this.nrmArr = new Float32Array(verts * 3);
+        this.uvArr = new Float32Array(verts * 2);
+        this.lengths = new Float32Array(cap);
+        this.gaps = new Uint8Array(cap);
+        const index = new (verts > 65535 ? Uint32Array : Uint16Array)((cap - 1) * RADIAL * 6);
+        let w = 0;
+        for (let i = 0; i < cap - 1; i++) {
+            for (let j = 0; j < RADIAL; j++) {
+                const a = i * (RADIAL + 1) + j;
+                const b = a + RADIAL + 1;
+                index[w++] = a;
+                index[w++] = b;
+                index[w++] = a + 1;
+                index[w++] = b;
+                index[w++] = b + 1;
+                index[w++] = a + 1;
+            }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(this.posArr, 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute("normal", new THREE.BufferAttribute(this.nrmArr, 3).setUsage(THREE.DynamicDrawUsage));
+        geo.setAttribute("uv", new THREE.BufferAttribute(this.uvArr, 2).setUsage(THREE.DynamicDrawUsage));
+        geo.setIndex(new THREE.BufferAttribute(index, 1));
+        geo.setDrawRange(0, 0);
+        // Corps jamais coupé par la caméra (frustumCulled = false) : une sphère fixe suffit,
+        // inutile de la recalculer sur tous les sommets à chaque image.
+        geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+        this.body.geometry.dispose();
+        this.body.geometry = geo;
+        this.capacity = cap;
     }
 
     #buildHead() {
@@ -415,16 +447,21 @@ export class SnakeModel {
     }
 
     // Échantillons du corps le long du chemin. Un saut (téléporteur) coupe le corps :
-    // les échantillons du saut sont marqués `gap` et le tube y a un rayon nul.
+    // les échantillons du saut sont marqués dans `gaps` et le tube y a un rayon nul.
     #sample() {
         const pts = this.pathPoints;
-        const out = this.samples;
-        out.length = 0;
-        this.gaps = [];
+        this.sampleCount = 0;
         if (!pts || pts.length < 2) return;
         const n = pts.length;
+        const subdiv = Math.max(MIN_SUBDIV, Math.min(SUBDIV, Math.floor(RING_BUDGET / (n - 1))));
+        this.#ensureCapacity((n - 1) * subdiv + 1);
+        const out = this.samples;
         const far = (a, b) => a.distanceToSquared(b) > GAP * GAP;
-        const tmp = new THREE.Vector3();
+        let w = 0;
+        const push = (gap) => {
+            this.gaps[w] = gap ? 1 : 0;
+            return (out[w++] ??= new THREE.Vector3());
+        };
         for (let j = 0; j < n - 1; j++) {
             const p1 = pts[j];
             const p2 = pts[j + 1];
@@ -432,49 +469,43 @@ export class SnakeModel {
             // Pas de courbe à travers un saut : on s'appuie sur le point lui-même.
             const p0 = j > 0 && !far(pts[j - 1], p1) ? pts[j - 1] : p1;
             const p3 = j + 2 < n && !far(p2, pts[j + 2]) ? pts[j + 2] : p2;
-            for (let k = 0; k < SUBDIV; k++) {
-                if (out.length >= MAX_RINGS - 1) return;
-                const t = k / SUBDIV;
-                if (gap) tmp.lerpVectors(p1, p2, t);
-                else catmull(p0, p1, p2, p3, t, tmp);
-                out.push(tmp.clone());
-                this.gaps.push(gap && k > 0);
+            for (let k = 0; k < subdiv; k++) {
+                const t = k / subdiv;
+                const v = push(gap && k > 0);
+                if (gap) v.lerpVectors(p1, p2, t);
+                else catmull(p0, p1, p2, p3, t, v);
             }
         }
-        out.push(pts[n - 1].clone());
-        this.gaps.push(false);
+        push(false).copy(pts[n - 1]);
+        this.sampleCount = w;
     }
 
     #buildTube() {
         const S = this.samples;
-        const count = S.length;
+        const count = this.sampleCount;
         const geo = this.body.geometry;
         if (count < 2) {
             geo.setDrawRange(0, 0);
             this.fins.count = 0;
             this.spikes.count = 0;
+            this.frames.length = 0;
             return;
         }
         // Longueur cumulée
-        const L = [0];
-        for (let i = 1; i < count; i++) L.push(L[i - 1] + S[i].distanceTo(S[i - 1]));
+        const L = this.lengths;
+        L[0] = 0;
+        for (let i = 1; i < count; i++) L[i] = L[i - 1] + S[i].distanceTo(S[i - 1]);
         const total = Math.max(L[count - 1], 0.001);
         this.length = total;
 
-        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.headQuat ?? new THREE.Quaternion());
-        const T = new THREE.Vector3();
-        const N = up.clone();
-        const B = new THREE.Vector3();
-        const C = new THREE.Vector3();
-        const dir = new THREE.Vector3();
+        const { T, N, B, C, dir, basisX, side, scale, m, q } = TMP;
+        N.set(0, 1, 0).applyQuaternion(this.headQuat ?? q.identity());
         const R = 0.3 + 0.025 * this.tier;
         const finStep = 0.55;
         let nextFin = 0.35;
         let fins = 0;
         let spikes = 0;
-        const m = new THREE.Matrix4();
-        const basisX = new THREE.Vector3();
-        this.frames = [];
+        const frames = this.frames;
 
         for (let i = 0; i < count; i++) {
             const a = S[Math.max(0, i - 1)];
@@ -491,59 +522,75 @@ export class SnakeModel {
             // Bosses de digestion : additionnées et plafonnées (plusieurs repas rapprochés,
             // surtout en sprint, ne doivent pas faire gonfler le corps démesurément).
             let swell = 0;
-            for (const bulge of this.bulges) swell += bulge.amp * Math.exp(-((L[i] - bulge.dist) ** 2) / 0.12);
+            for (const bulge of this.bulges) {
+                const d = L[i] - bulge.dist;
+                if (d * d < 1.2) swell += bulge.amp * Math.exp(-(d * d) / 0.12); // au-delà : contribution nulle
+            }
             r *= 1 + Math.min(0.6, swell);
-            r = this.gaps?.[i] ? 0 : Math.max(r, 0.03);
+            r = this.gaps[i] ? 0 : Math.max(r, 0.03);
 
             // Ondulation latérale (nulle près de la tête pour garder la lisibilité).
             const wave = Math.sin(this.time * 7 - L[i] * 2.4) * 0.07 * smoothstep(0.05, 0.25, s);
             C.copy(S[i]).addScaledVector(B, wave);
-            this.frames.push({ c: C.clone(), t: T.clone(), n: N.clone(), r });
+            const f = (frames[i] ??= { c: new THREE.Vector3(), t: new THREE.Vector3(), n: new THREE.Vector3(), r: 0 });
+            f.c.copy(C);
+            f.t.copy(T);
+            f.n.copy(N);
+            f.r = r;
 
+            const base = i * (RADIAL + 1);
             for (let j = 0; j <= RADIAL; j++) {
-                const th = (j / RADIAL) * Math.PI * 2;
-                dir.copy(N).multiplyScalar(Math.cos(th)).addScaledVector(B, Math.sin(th));
-                const v = i * (RADIAL + 1) + j;
-                this.posArr[v * 3] = C.x + dir.x * r;
-                this.posArr[v * 3 + 1] = C.y + dir.y * r;
-                this.posArr[v * 3 + 2] = C.z + dir.z * r;
-                this.nrmArr[v * 3] = dir.x;
-                this.nrmArr[v * 3 + 1] = dir.y;
-                this.nrmArr[v * 3 + 2] = dir.z;
+                const cos = RING_COS[j];
+                const sin = RING_SIN[j];
+                const dx = N.x * cos + B.x * sin;
+                const dy = N.y * cos + B.y * sin;
+                const dz = N.z * cos + B.z * sin;
+                const v = base + j;
+                this.posArr[v * 3] = C.x + dx * r;
+                this.posArr[v * 3 + 1] = C.y + dy * r;
+                this.posArr[v * 3 + 2] = C.z + dz * r;
+                this.nrmArr[v * 3] = dx;
+                this.nrmArr[v * 3 + 1] = dy;
+                this.nrmArr[v * 3 + 2] = dz;
                 this.uvArr[v * 2] = L[i] * UV_PER_UNIT;
                 this.uvArr[v * 2 + 1] = 1 - j / RADIAL;
             }
 
             // Nageoires (palier 2+) et pointes (palier 3+) le long du dos.
-            if (this.tier >= 2 && L[i] >= nextFin && s < 0.85 && fins < FIN_MAX && !this.gaps?.[i]) {
+            if (this.tier >= 2 && L[i] >= nextFin && s < 0.85 && fins < FIN_MAX && !this.gaps[i]) {
                 nextFin += finStep;
                 const k = r / R;
+                scale.set(k, k, k);
                 basisX.copy(T).negate();
-                m.makeBasis(basisX, N, B).scale(new THREE.Vector3(k, k, k)).setPosition(C.clone().addScaledVector(N, r * 0.85));
+                m.makeBasis(basisX, N, B).scale(scale).setPosition(dir.copy(C).addScaledVector(N, r * 0.85));
                 this.fins.setMatrixAt(fins++, m);
                 if (this.tier >= 3 && spikes < FIN_MAX * 2 - 1) {
-                    for (const side of [-1, 1]) {
-                        const sideDir = B.clone().multiplyScalar(side);
-                        m.makeBasis(T, sideDir, N.clone().multiplyScalar(side)).scale(new THREE.Vector3(k, k, k));
-                        m.setPosition(C.clone().addScaledVector(sideDir, r * 0.9));
+                    for (const sgn of [-1, 1]) {
+                        side.copy(B).multiplyScalar(sgn);
+                        m.makeBasis(T, side, dir.copy(N).multiplyScalar(sgn)).scale(scale);
+                        m.setPosition(dir.copy(C).addScaledVector(side, r * 0.9));
                         this.spikes.setMatrixAt(spikes++, m);
                     }
                 }
             }
         }
+        frames.length = count;
         this.fins.count = fins;
         this.spikes.count = spikes;
         this.fins.instanceMatrix.needsUpdate = true;
         this.spikes.instanceMatrix.needsUpdate = true;
         geo.setDrawRange(0, (count - 1) * RADIAL * 6);
-        geo.attributes.position.needsUpdate = true;
-        geo.attributes.normal.needsUpdate = true;
-        geo.attributes.uv.needsUpdate = true;
-        geo.computeBoundingSphere();
+        // N'envoyer au GPU que la partie utilisée des tampons.
+        for (const [name, size] of [["position", 3], ["normal", 3], ["uv", 2]]) {
+            const attr = geo.attributes[name];
+            attr.clearUpdateRanges?.();
+            attr.addUpdateRange?.(0, count * (RADIAL + 1) * size);
+            attr.needsUpdate = true;
+        }
     }
 
     get tail() {
-        return this.frames?.at(-1) ?? null;
+        return this.frames.length ? this.frames[this.frames.length - 1] : null;
     }
 
     update(dt) {
@@ -562,7 +609,7 @@ export class SnakeModel {
         }
         if (this.hurtT > 0) {
             this.hurtT -= dt;
-            this.head.position.add(new THREE.Vector3().randomDirection().multiplyScalar(0.06 * (this.hurtT / 0.5)));
+            this.head.position.add(TMP.dir.randomDirection().multiplyScalar(0.06 * (this.hurtT / 0.5)));
         }
 
         // Mâchoire : anticipation (nourriture devant) puis "chomp" en mangeant.
@@ -586,7 +633,7 @@ export class SnakeModel {
         const pulse = this.tier >= 3 ? 0.5 + 0.5 * Math.sin(this.time * 4) : 0;
         this.bodyMat.emissiveIntensity = 0.35 + this.tier * 0.18 + pulse * 0.6;
         const hurt = Math.max(0, this.hurtT / 0.5);
-        this.bodyMat.emissive.copy(this.glowColor).lerp(new THREE.Color(0xff1030), hurt);
+        this.bodyMat.emissive.copy(this.glowColor).lerp(HURT_COLOR, hurt);
         if (hurt > 0) this.bodyMat.emissiveIntensity += hurt * 2;
 
         // Bouclier : la bulle gonfle vite (ease-out), clignote juste avant de s'éteindre.
@@ -628,6 +675,21 @@ export class SnakeModel {
     }
 }
 
+// Objets temporaires partagés (un seul Snake est construit à la fois) : aucune allocation par image.
+const TMP = {
+    T: new THREE.Vector3(),
+    N: new THREE.Vector3(),
+    B: new THREE.Vector3(),
+    C: new THREE.Vector3(),
+    dir: new THREE.Vector3(),
+    basisX: new THREE.Vector3(),
+    side: new THREE.Vector3(),
+    scale: new THREE.Vector3(),
+    m: new THREE.Matrix4(),
+    q: new THREE.Quaternion(),
+};
+const HURT_COLOR = new THREE.Color(0xff1030);
+
 function smoothstep(a, b, x) {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
@@ -636,10 +698,6 @@ function smoothstep(a, b, x) {
 function catmull(p0, p1, p2, p3, t, out) {
     const t2 = t * t;
     const t3 = t2 * t;
-    for (const c of ["x", "y", "z"]) {
-        out[c] =
-            0.5 *
-            (2 * p1[c] + (-p0[c] + p2[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 + (-p0[c] + 3 * p1[c] - 3 * p2[c] + p3[c]) * t3);
-    }
-    return out;
+    const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+    return out.set(f(p0.x, p1.x, p2.x, p3.x), f(p0.y, p1.y, p2.y, p3.y), f(p0.z, p1.z, p2.z, p3.z));
 }

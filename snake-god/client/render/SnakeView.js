@@ -87,6 +87,13 @@ export class SnakeView {
         this.trailAcc = 0;
         this.tier = 1;
         this.edge = { t: 0, normal: new THREE.Vector3(0, 1, 0), next: new THREE.Vector3(0, 1, 0) };
+        // Trajectoire de chaque segment entre deux ticks, préparée une fois par état reçu
+        // (et non à chaque image) : départ, arrivée, point d'arc éventuel. Vecteurs réutilisés.
+        this.segs = []; // { from, to, ctrl, mode: 0 fixe | 1 droite | 2 arc, arc: point d'arête avant le segment | null }
+        this.segCount = 0;
+        this.points = [];
+        this.path = [];
+        this.tmp = new THREE.Vector3();
     }
 
     setMap(map, size) {
@@ -131,7 +138,40 @@ export class SnakeView {
         const left = vec(cross(snake.up, snake.dir)); // x local = haut × avant
         this.targetQuat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(left, up, dir));
         if (this.#teleported()) this.headQuat.copy(this.targetQuat);
-        if (visible) this.#watchEdge(snake);
+        if (visible) {
+            this.#watchEdge(snake);
+            this.#prepareSegments();
+        }
+    }
+
+    // Pour chaque segment : où il était au tick précédent, où il va, et comment il y va
+    // (ligne droite, arc par-dessus une arête du cube, ou saut : réapparition, portail).
+    #prepareSegments() {
+        const body = this.cur.body;
+        const prevBody = this.prev?.body;
+        this.segCount = body.length;
+        for (let i = 0; i < body.length; i++) {
+            const seg = (this.segs[i] ??= { from: new THREE.Vector3(), to: new THREE.Vector3(), ctrl: new THREE.Vector3(), arcPoint: new THREE.Vector3(), mode: 0, arc: false });
+            const cur = body[i];
+            cellToWorld(cur, this.size, seg.to);
+            seg.mode = 0;
+            if (prevBody?.length) {
+                const from = prevBody[Math.min(i, prevBody.length - 1)];
+                const dist = Math.abs(from[0] - cur[0]) + Math.abs(from[1] - cur[1]) + Math.abs(from[2] - cur[2]);
+                if (dist <= 2) {
+                    cellToWorld(from, this.size, seg.from);
+                    seg.mode = 1;
+                    // Passage d'arête : courbe de Bézier par-dessus l'arête (jamais à travers le cube).
+                    if (dist === 2 && this.#crossesEdge(from, cur) && this.map.isCell(from)) {
+                        this.#arcPoint(from, cur, seg.ctrl);
+                        seg.mode = 2;
+                    }
+                }
+            }
+            // Point d'arc entre ce segment et le précédent quand le corps change de face.
+            seg.arc = i > 0 && this.#crossesEdge(body[i - 1], cur) && this.map.neighbors(body[i - 1]).some((n) => equals(n, cur));
+            if (seg.arc) this.#arcPoint(body[i - 1], cur, seg.arcPoint);
+        }
     }
 
     // Arête dans 1 ou 2 cases : la caméra commence à pencher vers la face suivante.
@@ -170,46 +210,52 @@ export class SnakeView {
     }
 
     #lerpCell(i, alpha, out) {
-        const cur = this.cur.body[i];
-        cellToWorld(cur, this.size, out);
-        const prevBody = this.prev?.body;
-        if (!prevBody?.length) return out;
-        const from = prevBody[Math.min(i, prevBody.length - 1)];
-        const dist = Math.abs(from[0] - cur[0]) + Math.abs(from[1] - cur[1]) + Math.abs(from[2] - cur[2]);
-        if (dist > 2) return out; // au-delà : téléportation (réapparition, portail)
-        const start = cellToWorld(from, this.size, new THREE.Vector3());
-        if (dist === 2 && this.#crossesEdge(from, cur) && this.map.isCell(from)) {
-            // Passage d'arête : courbe de Bézier par-dessus l'arête (jamais à travers le cube).
-            const ctrl = this.#arcPoint(from, cur, new THREE.Vector3());
+        const seg = this.segs[i];
+        if (seg.mode === 0) return out.copy(seg.to);
+        if (seg.mode === 2) {
             const t = alpha;
             return out
-                .copy(start)
+                .copy(seg.from)
                 .multiplyScalar((1 - t) * (1 - t))
-                .addScaledVector(ctrl, 2 * (1 - t) * t)
-                .addScaledVector(cellToWorld(cur, this.size), t * t);
+                .addScaledVector(seg.ctrl, 2 * (1 - t) * t)
+                .addScaledVector(seg.to, t * t);
         }
-        return out.lerp(start, 1 - alpha);
+        return out.lerpVectors(seg.from, seg.to, alpha);
     }
 
     update(alpha, time, dt) {
         if (!this.cur?.alive || !this.cur.body.length) return;
-        const body = this.cur.body;
+        if (this.segCount !== this.cur.body.length) this.#prepareSegments();
         // Chemin interpolé, sans doublons (segments empilés après réapparition) ;
         // un point d'arc est ajouté là où le corps passe d'une face à l'autre.
-        const points = [];
-        for (let i = 0; i < body.length; i++) {
-            const p = this.#lerpCell(i, alpha, new THREE.Vector3());
-            if (i > 0 && this.#crossesEdge(body[i - 1], body[i]) && this.map.neighbors(body[i - 1]).some((n) => equals(n, body[i]))) {
-                points.push(this.#arcPoint(body[i - 1], body[i], new THREE.Vector3()));
+        // `path[0]` est réservé à la tête ; les vecteurs sont réutilisés d'une image à l'autre.
+        const path = this.path;
+        let n = 1;
+        const slot = () => (path[n] ??= new THREE.Vector3());
+        let last = null;
+        for (let i = 0; i < this.segCount; i++) {
+            if (this.segs[i].arc) {
+                last = slot().copy(this.segs[i].arcPoint);
+                n++;
             }
-            if (!points.length || p.distanceToSquared(points.at(-1)) > 0.0004) points.push(p);
+            const p = this.#lerpCell(i, alpha, this.tmp);
+            if (i === 0) {
+                this.headPos.copy(p);
+                last = this.headPos;
+            } else if (p.distanceToSquared(last) > 0.0004) {
+                last = slot().copy(p);
+                n++;
+            }
         }
-        this.headPos.copy(points[0]);
         this.headQuat.rotateTowards(this.targetQuat, dt * 11);
         // La tête dépasse légèrement vers l'avant : le corps reste derrière elle.
-        const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.headQuat);
-        const path = [this.headPos.clone().addScaledVector(forward, 0.12), ...points.slice(1)];
-        if (path.length === 1) path.push(this.headPos.clone().addScaledVector(forward, -0.3));
+        const forward = this.tmp.set(0, 0, 1).applyQuaternion(this.headQuat);
+        (path[0] ??= new THREE.Vector3()).copy(this.headPos).addScaledVector(forward, 0.12);
+        if (n === 1) {
+            slot().copy(this.headPos).addScaledVector(forward, -0.3);
+            n++;
+        }
+        path.length = n;
         this.model.setPath(path, this.headQuat);
 
         // Clignote pendant l'invulnérabilité.

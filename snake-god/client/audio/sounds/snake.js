@@ -103,6 +103,14 @@ export const SnakeSounds = {
                 noise(ctx, out, t, { filterType: "bandpass", freq: 4000, freqEnd: 8000, q: 4, release: 0.15, gain: 0.14 });
                 chime(ctx, out, t, { freq: 1500, release: 0.25, gain: 0.04 });
                 break;
+            case "FireTrap": // feu : « fwoosh »
+                noise(ctx, out, t, { filterType: "lowpass", freq: 600, freqEnd: 3500, attack: 0.04, release: 0.35, gain: 0.22 });
+                noise(ctx, out, t + 0.05, { filterType: "bandpass", freq: 1800, q: 0.7, release: 0.3, gain: 0.08 });
+                break;
+            case "TeslaTrap": // tesla : zap électrique
+                tone(ctx, out, t, { type: "sawtooth", freq: 1400, freqEnd: 200, release: 0.12, gain: 0.05, vibrato: 400 });
+                for (let i = 0; i < 4; i++) noise(ctx, out, t + i * 0.03, { filterType: "highpass", freq: 4000, release: 0.02, gain: 0.1 });
+                break;
             case "SawTrap": // scie : vrombissement qui monte
                 tone(ctx, out, t, { type: "sawtooth", freq: 180, freqEnd: 520, release: 0.25, gain: 0.06, filter: { type: "bandpass", freq: 1500, q: 3 } });
                 noise(ctx, out, t, { filterType: "bandpass", freq: 3500, q: 2, release: 0.2, gain: 0.08 });
