@@ -36,53 +36,83 @@
     </section>
 
     <!-- ===== Choix du mode ===== -->
+    <!-- Liste des modes à gauche, détail et lancement à droite : un seul écran pour jouer. -->
     <section id="screen-mode" class="screen menu-screen hidden">
         <header class="screen-head">
             <button class="back-btn" data-back>‹ Retour</button>
-            <h2>Mode de jeu</h2>
+            <div class="head-titles">
+                <span class="crumb">Jouer</span>
+                <h2>Mode de jeu</h2>
+            </div>
         </header>
-        <div class="mode-grid">
-            <button class="mode-card" data-mode="solo">
-                <div class="mode-art art-solo"></div>
-                <h3>Solo contre l'IA</h3>
-                <p>Choisis ton rôle, l'IA joue les deux autres.</p>
-            </button>
-            <button class="mode-card" data-mode="online">
-                <div class="mode-art art-online"></div>
-                <h3>Multijoueur</h3>
-                <p>Crée un salon ou rejoins des amis avec un code. L'IA complète les places libres.</p>
-            </button>
-            <button class="mode-card" data-mode="demo">
-                <div class="mode-art art-demo"></div>
-                <h3>Démonstration IA</h3>
-                <p>Regarde trois IA s'affronter.</p>
-            </button>
-        </div>
-    </section>
+        <div class="mode-layout">
+            <div class="mode-list" role="tablist" aria-label="Modes de jeu">
+                <button class="mode-tab" role="tab" data-mode-tab="solo">
+                    <span class="mode-icon" data-icon="solo"></span>
+                    <span class="mode-text"><strong>Solo</strong><small>Toi contre l'IA</small></span>
+                    <kbd>1</kbd>
+                </button>
+                <button class="mode-tab" role="tab" data-mode-tab="online">
+                    <span class="mode-icon" data-icon="online"></span>
+                    <span class="mode-text"><strong>Multijoueur</strong><small>Salons avec tes amis</small></span>
+                    <kbd>2</kbd>
+                </button>
+                <button class="mode-tab" role="tab" data-mode-tab="demo">
+                    <span class="mode-icon" data-icon="demo"></span>
+                    <span class="mode-text"><strong>Démonstration</strong><small>Trois IA s'affrontent</small></span>
+                    <kbd>3</kbd>
+                </button>
+            </div>
 
-    <!-- ===== Solo : choix du rôle ===== -->
-    <section id="screen-solo" class="screen menu-screen hidden">
-        <header class="screen-head">
-            <button class="back-btn" data-back>‹ Retour</button>
-            <h2>Qui veux-tu incarner ?</h2>
-        </header>
-        <div class="duration-pick">
-            <span>Durée de la partie</span>
-            <div class="segmented duration-seg" data-duration-seg="solo"></div>
-        </div>
-        <div class="role-pick">
-            <button class="role-big snake" data-solo-role="snake1">
-                <div class="role-emblem emblem-snake"></div>
-                <h3>Snake</h3>
-                <p>Survis, mange, grandis et évolue. Un autre Snake et le dieu sont joués par l'IA.</p>
-                <span class="role-keys">← → tourner · ↑ ↓ monter / descendre</span>
-            </button>
-            <button class="role-big god" data-solo-role="god">
-                <div class="role-emblem emblem-god"></div>
-                <h3>Snake God</h3>
-                <p>Contrôle le monde. Tu vois les prochains événements avant tout le monde. Élimine les deux Snakes.</p>
-                <span class="role-keys">1–6 pouvoirs · clic poser · R axe · ↑ ↓ couche</span>
-            </button>
+            <div class="mode-detail panel">
+                <div class="mode-pane" data-pane="solo" role="tabpanel">
+                    <div class="mode-art art-solo"><i></i><i></i><i></i></div>
+                    <h3>Solo contre l'IA</h3>
+                    <p class="muted">Choisis la durée puis ton rôle : la partie démarre tout de suite. L'IA joue les deux autres rôles.</p>
+                    <div class="step"><span class="step-n">1</span>Durée de la partie</div>
+                    <div class="segmented duration-seg" data-duration-seg="solo"></div>
+                    <div class="step"><span class="step-n">2</span>Ton rôle</div>
+                    <div class="role-pick">
+                        <button class="role-big snake" data-solo-role="snake1">
+                            <div class="role-emblem emblem-snake"></div>
+                            <div>
+                                <h4>Snake</h4>
+                                <p>Survis, mange, grandis. Sprint, Bouclier et Phase.</p>
+                                <span class="role-keys">← → ↑ ↓ · Espace E F</span>
+                            </div>
+                        </button>
+                        <button class="role-big god" data-solo-role="god">
+                            <div class="role-emblem emblem-god"></div>
+                            <div>
+                                <h4>Snake God</h4>
+                                <p>Contrôle le monde et élimine les deux Snakes.</p>
+                                <span class="role-keys">1–6 pouvoirs · clic · R · ↑ ↓</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mode-pane" data-pane="online" role="tabpanel">
+                    <div class="mode-art art-online"><i></i><i></i><i></i></div>
+                    <h3>Multijoueur</h3>
+                    <p class="muted">Jusqu'à 3 joueurs : deux Snakes et un dieu. Les places libres sont jouées par l'IA.</p>
+                    <ul class="feature-list">
+                        <li><strong>Créer</strong> un salon public ou privé et partager son code</li>
+                        <li><strong>Rejoindre</strong> avec un code de 4 lettres</li>
+                        <li><strong>Parcourir</strong> les salons publics ouverts</li>
+                    </ul>
+                    <button class="cta" data-go="online">Ouvrir le multijoueur</button>
+                </div>
+
+                <div class="mode-pane" data-pane="demo" role="tabpanel">
+                    <div class="mode-art art-demo"><i></i><i></i><i></i></div>
+                    <h3>Démonstration IA</h3>
+                    <p class="muted">Regarde deux Snakes IA affronter le dieu IA. Idéal pour découvrir les règles.</p>
+                    <div class="step"><span class="step-n">1</span>Durée de la partie</div>
+                    <div class="segmented duration-seg" data-duration-seg="demo"></div>
+                    <button class="cta" data-demo-start>Lancer la démonstration</button>
+                </div>
+            </div>
         </div>
     </section>
 
@@ -90,29 +120,41 @@
     <section id="screen-online" class="screen menu-screen hidden">
         <header class="screen-head">
             <button class="back-btn" data-back>‹ Retour</button>
-            <h2>Multijoueur</h2>
+            <div class="head-titles">
+                <span class="crumb">Jouer › Multijoueur</span>
+                <h2>Multijoueur</h2>
+            </div>
         </header>
-        <div class="online-grid">
-            <div class="panel">
-                <h3>Créer un salon</h3>
-                <p class="muted">Tu seras l'hôte. Partage le code à tes amis.</p>
-                <label class="toggle"><input type="checkbox" id="private-toggle"> <span>Salon privé (accessible uniquement avec le code)</span></label>
-                <button id="create-room-btn" class="cta">Créer</button>
-            </div>
-            <div class="panel">
-                <h3>Rejoindre avec un code</h3>
-                <p class="muted">4 lettres, par exemple KQZT.</p>
+        <div class="online-layout">
+            <div class="panel join-panel">
+                <h3>Rejoindre un salon</h3>
+                <p class="muted">Entre le code de 4 lettres donné par l'hôte.</p>
                 <div class="join-row">
-                    <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off">
-                    <button id="join-btn" class="cta">Rejoindre</button>
+                    <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Code du salon">
+                    <button id="join-btn" class="cta" disabled>Rejoindre</button>
                 </div>
-            </div>
-            <div class="panel rooms-panel">
                 <div class="panel-title-row">
-                    <h3>Salons publics</h3>
+                    <h4>Salons publics <span id="room-count" class="badge">0</span></h4>
                     <button id="refresh-rooms" class="ghost-btn small">Actualiser</button>
                 </div>
                 <ul id="room-list" class="room-list"></ul>
+            </div>
+
+            <div class="panel create-panel">
+                <h3>Créer un salon</h3>
+                <p class="muted">Tu deviens l'hôte : tu règles la durée et tu lances la partie.</p>
+                <div class="segmented visibility-seg" role="radiogroup" aria-label="Visibilité">
+                    <button data-private="0" class="active">Public</button>
+                    <button data-private="1">Privé</button>
+                </div>
+                <small id="visibility-help" class="muted">Visible dans la liste des salons publics.</small>
+                <button id="create-room-btn" class="cta">Créer le salon</button>
+                <ol class="how-to">
+                    <li>Crée le salon</li>
+                    <li>Partage le code</li>
+                    <li>Chacun choisit son rôle</li>
+                    <li>L'hôte lance la partie</li>
+                </ol>
             </div>
         </div>
     </section>
@@ -120,29 +162,47 @@
     <!-- ===== Salon : rôles ===== -->
     <section id="screen-room" class="screen menu-screen hidden">
         <header class="screen-head">
-            <button class="back-btn" id="leave-room-btn">‹ Quitter</button>
-            <h2 id="room-title">Salon</h2>
-            <div class="room-code">Code <strong id="room-code">----</strong> <button id="copy-code" class="ghost-btn small">Copier</button></div>
+            <button class="back-btn" id="leave-room-btn">‹ Quitter le salon</button>
+            <div class="head-titles">
+                <span class="crumb">Jouer › Multijoueur › Salon</span>
+                <h2 id="room-title">Salon</h2>
+            </div>
         </header>
+        <ol class="room-steps">
+            <li data-step="role">Clique sur une carte pour prendre un rôle</li>
+            <li data-step="duration">L'hôte règle la durée</li>
+            <li data-step="start">L'hôte lance la partie</li>
+        </ol>
         <div class="room-layout">
             <div class="roles">
                 <button class="role-card" data-role="snake1">
+                    <span class="role-art"></span>
+                    <span class="role-status"></span>
                     <span class="role-tag">Snake 1</span>
                     <span class="role-owner"></span>
                     <span class="role-skin"></span>
                 </button>
                 <button class="role-card" data-role="snake2">
+                    <span class="role-art"></span>
+                    <span class="role-status"></span>
                     <span class="role-tag">Snake 2</span>
                     <span class="role-owner"></span>
                     <span class="role-skin"></span>
                 </button>
                 <button class="role-card god" data-role="god">
+                    <span class="role-art"></span>
+                    <span class="role-status"></span>
                     <span class="role-tag">Snake God</span>
                     <span class="role-owner"></span>
                     <span class="role-skin">Vision divine · contrôle du monde</span>
                 </button>
             </div>
             <aside class="panel room-side">
+                <div class="share-box">
+                    <span class="muted">Code à partager</span>
+                    <strong id="room-code">----</strong>
+                    <button id="copy-code" class="ghost-btn small">Copier le code</button>
+                </div>
                 <h3>Joueurs</h3>
                 <ul id="player-list" class="player-list"></ul>
                 <p class="muted">Les rôles libres sont joués par l'IA. Si un joueur se déconnecte, l'IA le remplace jusqu'à son retour.</p>
@@ -161,10 +221,14 @@
     </section>
 
     <!-- ===== Personnalisation ===== -->
+    <!-- Panneau à gauche, aperçu 3D en direct à droite (dans la scène). -->
     <section id="screen-customize" class="screen menu-screen custom-screen hidden">
         <header class="screen-head">
             <button class="back-btn" data-back>‹ Retour</button>
-            <h2>Ton Snake</h2>
+            <div class="head-titles">
+                <span class="crumb">Profil</span>
+                <h2>Ton Snake</h2>
+            </div>
         </header>
         <div class="custom-panel panel">
             <label class="field">
@@ -172,17 +236,19 @@
                 <input id="name-input" maxlength="16" placeholder="Joueur" autocomplete="off">
             </label>
             <div class="tabs" role="tablist">
-                <button class="tab active" data-tab="skin">Espèce</button>
-                <button class="tab" data-tab="accessory">Accessoire</button>
-                <button class="tab" data-tab="trail">Traînée</button>
+                <button class="tab active" data-tab="skin" role="tab">Espèce <small data-count="skin"></small></button>
+                <button class="tab" data-tab="accessory" role="tab">Accessoire <small data-count="accessory"></small></button>
+                <button class="tab" data-tab="trail" role="tab">Traînée <small data-count="trail"></small></button>
             </div>
-            <div id="custom-options" class="custom-options"></div>
+            <p id="custom-hint" class="custom-hint muted"></p>
+            <div id="custom-options" class="custom-options" role="radiogroup"></div>
             <div class="evo-preview">
                 <span>Aperçu de l'évolution</span>
                 <div id="evo-buttons" class="evo-buttons"></div>
                 <p id="evo-desc" class="muted"></p>
             </div>
         </div>
+        <p class="preview-caption">Aperçu en direct →</p>
     </section>
 
     <!-- ===== Paramètres ===== -->

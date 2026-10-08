@@ -29,7 +29,7 @@ Ou double-clique sur `lancer.bat`. Ouvre ensuite http://localhost:8080.
 - **Paramètres** : qualité graphique, bloom, distance de la caméra, champ de vision, tremblements de l'écran, aide en jeu. Gardés dans le navigateur.
 - **Fin de partie** : verdict, carte de résultats par joueur (score, longueur, survie, nourriture, dégâts, pièges), MVP, pouvoirs utilisés par le dieu ; Rejouer, Retour au salon ou Menu principal.
 
-Raccourci de test : `http://localhost:8080/?play=snake1` (ou `snake2`, `god`, `demo`) lance directement une partie rapide.
+Raccourcis de test : `http://localhost:8080/?play=snake1` (ou `snake2`, `god`, `demo`) lance directement une partie rapide ; `?menu=mode` (ou `online`, `customize`, `settings`) ouvre directement un écran.
 En partie : bouton **Quitter** (ou Échap) à tout moment, avec confirmation ; l'IA prend ta place.
 
 Options du serveur : `MATCH_SECONDS=40` (durée par défaut des salons ; 90 s sinon), `COUNTDOWN_SECONDS=10` (compte à rebours), `PORT=8081`.

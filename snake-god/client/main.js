@@ -497,4 +497,7 @@ net.on(S2C.WELCOME, () => {
     }
 });
 ui.show("main", { push: false });
+// Raccourci de test : ?menu=mode|online|customize|settings ouvre directement un écran.
+const menu = params.get("menu");
+if (["mode", "online", "customize", "settings"].includes(menu)) ui.show(menu);
 net.connect();

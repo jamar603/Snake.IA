@@ -23,3 +23,24 @@ export const EVENT_ICONS = {
     foodRain: "🌧",
     meteorShower: "☄",
 };
+
+// Icônes des modes de jeu (écran « Mode de jeu »).
+export const MODE_ICONS = {
+    solo: svg(`<circle cx="16" cy="11" r="5"/><path d="M6 27c1.5-5 5.5-8 10-8s8.5 3 10 8"/>`),
+    online: svg(`<circle cx="9" cy="12" r="4"/><circle cx="23" cy="12" r="4"/><circle cx="16" cy="8" r="4"/><path d="M2 26c1-4 4-6 7-6M30 26c-1-4-4-6-7-6M9 27c1-4.5 3.8-7 7-7s6 2.5 7 7"/>`),
+    demo: svg(`<rect x="4" y="6" width="24" height="16" rx="3"/><path d="M14 11l5 3-5 3z"/><path d="M11 27h10"/>`),
+};
+
+// Accessoires : tête de Snake vue de face + l'accessoire (cartes de personnalisation).
+const head = `<ellipse cx="32" cy="38" rx="17" ry="13" fill="var(--skin, #22e6ff)" stroke="none"/>
+<circle cx="25" cy="35" r="3.2" fill="#fff35c" stroke="none"/><circle cx="39" cy="35" r="3.2" fill="#fff35c" stroke="none"/>
+<path d="M25 33.5v3M39 33.5v3" stroke="#050308" stroke-width="1.6"/>`;
+const art = (body) =>
+    `<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${head}${body}</svg>`;
+export const ACCESSORY_ICONS = {
+    none: art(""),
+    horns: art(`<path d="M20 28c-4-6-4-12-1-17 1 6 4 9 8 12M44 28c4-6 4-12 1-17-1 6-4 9-8 12" fill="#f2e6d0" stroke="#c9bba0"/>`),
+    crown: art(`<path d="M19 26l3-12 6 7 4-10 4 10 6-7 3 12z" fill="#ffd34d" stroke="#b8860b"/>`),
+    crest: art(`<path d="M32 26c-3-6-2-13 2-18 0 6 3 9 6 11-2 2-5 4-8 7z" fill="var(--glow, #8ff8ff)" stroke="none"/>`),
+    visor: art(`<path d="M15 33c4-5 30-5 34 0-3 4-31 4-34 0z" fill="var(--glow, #8ff8ff)" fill-opacity="0.8" stroke="var(--glow, #8ff8ff)"/>`),
+};
