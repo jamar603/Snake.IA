@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { POWERS, SNAKE } from "../shared/config.js";
+import { POWERS, SNAKE, UNLIMITED } from "../shared/config.js";
 import { rotateQuarter, rotatingWallCells, rotatingWallFits } from "../shared/grid.js";
 import { MATCH_STATUS } from "../shared/protocol.js";
 import { GameManager } from "../server/GameManager.js";
@@ -188,7 +188,7 @@ test("fruit doré : 50 points et 3 segments", () => {
 test("le monde grandit : annonce, puis nouvelle taille et nouvelles zones", () => {
     const game = new GameManager({ rng: seeded(9), countdownSeconds: 0, worldEvents: false });
     game.startMatch({ snake1: { name: "A", ai: true }, snake2: { name: "B", ai: true } });
-    assert.equal(game.grid.arena.size, 5);
+    assert.equal(game.grid.arena.size, 7);
     let start = null;
     let complete = null;
     for (let i = 0; i < 400 && !complete; i++) {
@@ -197,9 +197,63 @@ test("le monde grandit : annonce, puis nouvelle taille et nouvelles zones", () =
             if (ev.type === "expansionComplete") complete = ev;
         }
     }
-    assert.equal(start.toSize, 7);
-    assert.equal(complete.toSize, 7);
-    assert.equal(game.grid.arena.size, 7);
-    assert.ok(complete.cells.every((c) => c.some((v) => v === 2 || v === 8)), "piliers dans la nouvelle couche");
+    assert.equal(start.toSize, 9);
+    assert.equal(complete.toSize, 9);
+    assert.equal(game.grid.arena.size, 9);
+    assert.ok(complete.cells.every((c) => c.some((v) => v === 2 || v === 10)), "piliers dans la nouvelle couche");
     assert.equal(game.snapshot().arena.min, 2);
+});
+
+test("durée : illimitée jusqu'à la longueur cible, sinon fin au timer", () => {
+    let game = newGame({ snake1: "A" });
+    game.setDuration(0);
+    assert.equal(game.snapshot().timeLeftMs, null);
+    game.now = 10 * 60 * 1000; // 10 min : rien ne s'arrête
+    game.tick(game.tickMs);
+    assert.notEqual(game.status, MATCH_STATUS.ENDED);
+    const s = game.getSnake("snake1");
+    s.body = Array.from({ length: UNLIMITED.winLength }, (_, i) => [1, 4, 1 + (i % 7)]);
+    s.spawn([4, 4, 4], [1, 0, 0], [0, 1, 0], UNLIMITED.winLength);
+    game.tick(game.tickMs);
+    assert.equal(game.status, MATCH_STATUS.ENDED);
+    assert.equal(game.summary.winner, "snakes");
+
+    game = newGame({ snake1: "A" });
+    game.setDuration(90);
+    game.now = 90000 - 10;
+    game.tick(game.tickMs);
+    assert.equal(game.status, MATCH_STATUS.ENDED);
+});
+
+test("compétences : sprint, bouclier et phase", () => {
+    // Sprint : deux cases par tick.
+    let game = newGame({ snake1: "A" });
+    let s = game.getSnake("snake1");
+    s.spawn([2, 4, 4], [1, 0, 0], [0, 1, 0], 1);
+    assert.equal(game.handleSkill("snake1", "sprint"), true);
+    assert.equal(game.handleSkill("snake1", "sprint"), false, "recharge");
+    game.tick(game.tickMs);
+    assert.deepEqual(s.head, [4, 4, 4]);
+    assert.ok(game.events.some((e) => e.type === "skillUsed" && e.skill === "sprint"), "événement reçu hors tick, envoyé au tick suivant");
+
+    // Bouclier : le choc contre un mur ne coûte pas de PV.
+    game = newGame({ snake1: "A" });
+    s = game.getSnake("snake1");
+    s.spawn([2, 4, 4], [1, 0, 0], [0, 1, 0], 1);
+    game.walls.addStatic([[3, 4, 4]], { kind: "pillar" });
+    game.handleSkill("snake1", "shield");
+    game.tick(game.tickMs);
+    assert.equal(s.health.hp, SNAKE.maxHp);
+    assert.ok(game.events.some((e) => e.type === "shieldBlocked"));
+
+    // Phase : traverse le mur sans dégât.
+    game = newGame({ snake1: "A" });
+    s = game.getSnake("snake1");
+    s.spawn([2, 4, 4], [1, 0, 0], [0, 1, 0], 1);
+    game.walls.addStatic([[3, 4, 4]], { kind: "pillar" });
+    game.handleSkill("snake1", "phase");
+    game.tick(game.tickMs);
+    game.tick(game.tickMs);
+    assert.deepEqual(s.head, [4, 4, 4]);
+    assert.equal(s.health.hp, SNAKE.maxHp);
 });

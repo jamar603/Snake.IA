@@ -66,6 +66,10 @@
             <button class="back-btn" data-back>‹ Retour</button>
             <h2>Qui veux-tu incarner ?</h2>
         </header>
+        <div class="duration-pick">
+            <span>Durée de la partie</span>
+            <div class="segmented duration-seg" data-duration-seg="solo"></div>
+        </div>
         <div class="role-pick">
             <button class="role-big snake" data-solo-role="snake1">
                 <div class="role-emblem emblem-snake"></div>
@@ -142,6 +146,10 @@
                 <h3>Joueurs</h3>
                 <ul id="player-list" class="player-list"></ul>
                 <p class="muted">Les rôles libres sont joués par l'IA. Si un joueur se déconnecte, l'IA le remplace jusqu'à son retour.</p>
+                <div class="duration-pick">
+                    <span>Durée de la partie <small id="duration-host-only" class="muted">(choisie par l'hôte)</small></span>
+                    <div class="segmented duration-seg" data-duration-seg="room"></div>
+                </div>
                 <div class="room-actions">
                     <button id="spectate-btn" class="ghost-btn">Spectateur</button>
                     <button id="room-customize-btn" class="ghost-btn">Personnaliser</button>
@@ -224,6 +232,7 @@
 
     <!-- ===== HUD ===== -->
     <section id="hud" class="hud hidden">
+        <button id="quit-btn" class="quit-btn" title="Quitter la partie (Échap)">✕ Quitter</button>
         <div class="hud-top">
             <div id="snake-cards" class="snake-cards"></div>
             <div class="clock">
@@ -251,19 +260,33 @@
             <div class="god-tools">
                 <span>Couche <strong id="layer-value">0</strong></span>
                 <span>Axe <strong id="axis-value">y</strong></span>
+                <span id="god-hint" class="god-hint"></span>
                 <span class="hint">Clic : poser · R : axe · ↑ ↓ : couche</span>
             </div>
         </div>
 
         <div id="snake-panel" class="snake-panel hidden">
+            <div id="skills" class="skills"></div>
             <div class="evo-label"><span id="evo-name">Éclosion</span><small id="evo-next"></small></div>
             <div class="evo-bar"><div id="evo-fill"></div></div>
-            <div id="snake-help" class="snake-help">← → tourner · ↑ ↓ monter / descendre</div>
+            <div id="snake-help" class="snake-help">← → tourner · ↑ ↓ monter / descendre · Espace, E, F : compétences</div>
         </div>
 
         <div id="you-are" class="you-are"></div>
     </section>
     <div id="notices" class="notices"></div>
+
+    <!-- ===== Quitter la partie ===== -->
+    <div id="quit-dialog" class="dialog-backdrop closed" role="dialog" aria-modal="true" aria-labelledby="quit-title">
+        <div class="dialog">
+            <h3 id="quit-title">Quitter la partie ?</h3>
+            <p class="muted">L'IA prend ta place. Tu reviens au menu principal.</p>
+            <div class="dialog-actions">
+                <button id="quit-cancel" class="ghost-btn">Continuer</button>
+                <button id="quit-confirm" class="cta danger">Quitter</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ===== Fin de partie ===== -->
     <section id="screen-end" class="screen end-screen hidden">

@@ -19,6 +19,11 @@ export class SnakeCamera {
         this.shakeAmount = Math.max(this.shakeAmount, amount);
     }
 
+    // Petit élan vers l'avant (bouchée, fruit doré) : la caméra répond au geste du joueur.
+    punch(amount = 0.2) {
+        this.punchAmount = Math.max(this.punchAmount ?? 0, amount);
+    }
+
     reset() {
         this.ready = false;
     }
@@ -54,6 +59,11 @@ export class SnakeCamera {
         }
 
         this.camera.position.copy(this.pos);
+        if (this.punchAmount > 0.001) {
+            // Montée instantanée, retour en ~200 ms (ease-out exponentiel).
+            this.camera.position.addScaledVector(forward, this.punchAmount);
+            this.punchAmount *= Math.exp(-dt * 14);
+        }
         if (this.shakeAmount > 0.001) {
             this.camera.position.add(new THREE.Vector3().randomDirection().multiplyScalar(this.shakeAmount));
             this.shakeAmount *= Math.exp(-dt * 10);
@@ -75,6 +85,13 @@ export class GodCamera {
         this.controls.maxDistance = size * 3;
         this.controls.enabled = false;
         this.home = new THREE.Vector3(size * 1.15, size * 0.95, size * 1.35);
+        this.shakeAmount = 0;
+    }
+
+    // Secousse en rotation (pas en position) : OrbitControls recalcule l'orientation
+    // à chaque image, donc la secousse ne dérive jamais.
+    shake(amount = 0.35) {
+        this.shakeAmount = Math.max(this.shakeAmount, amount);
     }
 
     setArena(size) {
@@ -103,6 +120,12 @@ export class GodCamera {
             this.camera.position.multiplyScalar(1 + Math.min(0.05, dt * 1.2));
         }
         this.controls.update();
+        if (this.shakeAmount > 0.001) {
+            const s = this.shakeAmount * 0.025;
+            this.camera.rotateX((Math.random() - 0.5) * s);
+            this.camera.rotateY((Math.random() - 0.5) * s);
+            this.shakeAmount *= Math.exp(-dt * 10);
+        }
     }
 }
 

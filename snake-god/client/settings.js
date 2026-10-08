@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
     fov: 62,
     screenShake: true,
     showHelp: true,
+    matchDuration: 90, // secondes, 0 = illimitée (solo, démonstration, salons créés)
     audio: AUDIO_DEFAULTS, // volumes et coupures par catégorie
 };
 

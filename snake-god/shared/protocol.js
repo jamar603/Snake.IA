@@ -8,11 +8,13 @@ export const C2S = {
     CREATE_ROOM: "createRoom", // { private: bool }
     JOIN_ROOM: "joinRoom", // { code }
     LEAVE_ROOM: "leaveRoom",
-    QUICK_PLAY: "quickPlay", // { role | null } salon privé, IA partout ailleurs, départ immédiat
+    QUICK_PLAY: "quickPlay", // { role | null, duration? } salon privé, IA partout ailleurs, départ immédiat
+    SET_DURATION: "setDuration", // { seconds } (hôte) durée de la partie, 0 = illimitée
     CHOOSE_ROLE: "chooseRole", // { role: "snake1" | "snake2" | "god" | null }
     START: "start", // lancer la partie depuis le salon (hôte)
     TURN: "turn", // { turn: "left" | "right" | "up" | "down" } relatif à la tête du Snake
     POWER: "power", // { power, cell?: [x,y,z], axis: "x" | "y" | "z" }
+    SKILL: "skill", // { skill: "sprint" | "shield" | "phase" } compétence du Snake
     BACK_TO_LOBBY: "backToLobby",
 };
 

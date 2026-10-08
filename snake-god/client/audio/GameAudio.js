@@ -90,7 +90,7 @@ export class GameAudio {
         intensity += Math.min(0.12, longest / 180);
         if (state.expansion) intensity += 0.08;
         intensity += danger * 0.1;
-        if (state.status === "playing" && state.timeLeftMs < 20000) {
+        if (state.status === "playing" && state.timeLeftMs != null && state.timeLeftMs < 20000) {
             intensity = 1;
             if (!this.saidFinal) {
                 this.saidFinal = true;

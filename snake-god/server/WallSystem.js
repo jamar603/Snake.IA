@@ -102,6 +102,7 @@ export class WallSystem {
             arm: w.arm,
             turns: w.turns,
             expiresAt: w.expiresAt ?? null,
+            nextRotateAt: w.nextRotateAt ?? null, // mur rotatif : le client prévient avant le quart de tour
         }));
     }
 }

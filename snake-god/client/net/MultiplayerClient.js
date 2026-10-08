@@ -51,8 +51,13 @@ export class MultiplayerClient extends EventTarget {
         this.send({ t: C2S.SET_PROFILE, ...this.getProfile() });
     }
 
-    quickPlay(role) {
-        this.send({ t: C2S.QUICK_PLAY, role });
+    quickPlay(role, duration) {
+        this.send({ t: C2S.QUICK_PLAY, role, duration });
+    }
+
+    // Hôte : durée de la partie (secondes, 0 = illimitée).
+    setDuration(seconds) {
+        this.send({ t: C2S.SET_DURATION, seconds });
     }
 
     listRooms() {
@@ -85,6 +90,10 @@ export class MultiplayerClient extends EventTarget {
 
     usePower(power, cell, axis) {
         this.send({ t: C2S.POWER, power, cell, axis });
+    }
+
+    useSkill(skill) {
+        this.send({ t: C2S.SKILL, skill });
     }
 
     backToLobby() {

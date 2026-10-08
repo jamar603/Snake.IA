@@ -218,6 +218,74 @@ export function snakeSkinTextures(skin) {
     return result;
 }
 
+// Relief des écailles (normal map, se répète). Même repère que la peau :
+// x = le long du corps, y = tour du corps (bord = dos, milieu = ventre).
+// Dos et flancs : écailles imbriquées en quinconce. Ventre : larges plaques transversales.
+export function scaleNormalTexture() {
+    if (cache.has("scaleNormal")) return cache.get("scaleNormal");
+    const W = 256;
+    const H = 256;
+    const COLS = 8; // écailles par répétition, le long du corps
+    const ROWS = 14; // écailles autour du corps
+    const height = new Float32Array(W * H);
+    for (let y = 0; y < H; y++) {
+        const v = y / H;
+        const belly = 1 - Math.min(1, Math.abs(v - 0.5) / 0.1); // 1 au milieu du ventre
+        for (let x = 0; x < W; x++) {
+            const u = x / W;
+            // Écaille : bombée, plus haute vers l'arrière (comme des tuiles qui se chevauchent).
+            const row = Math.floor(v * ROWS);
+            const fu = (u * COLS + (row % 2) * 0.5) % 1;
+            const fv = (v * ROWS) % 1;
+            const dx = (fu - 0.5) * 2;
+            const dy = (fv - 0.5) * 2;
+            const d = Math.min(1, Math.sqrt(dx * dx * 0.8 + dy * dy));
+            const scale = (1 - d * d) * (0.55 + 0.45 * fu);
+            // Plaques du ventre : bandes transversales, arrondies à l'avant.
+            const plate = Math.pow(1 - ((u * COLS * 1.5) % 1), 0.6);
+            height[y * W + x] = scale * (1 - belly) + plate * 0.8 * belly;
+        }
+    }
+    const [c, g] = canvas(W, H);
+    const img = g.createImageData(W, H);
+    const at = (x, y) => height[((y + H) % H) * W + ((x + W) % W)];
+    const strength = 3;
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const nx = (at(x - 1, y) - at(x + 1, y)) * strength;
+            const ny = (at(x, y + 1) - at(x, y - 1)) * strength;
+            const len = Math.hypot(nx, ny, 1);
+            const i = (y * W + x) * 4;
+            img.data[i] = ((nx / len) * 0.5 + 0.5) * 255;
+            img.data[i + 1] = ((ny / len) * 0.5 + 0.5) * 255;
+            img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+            img.data[i + 3] = 255;
+        }
+    }
+    g.putImageData(img, 0, 0);
+    const t = toTexture(c, { repeat: true, color: false });
+    cache.set("scaleNormal", t);
+    return t;
+}
+
+// Lune en croissant (sprite du ciel).
+export function moonTexture() {
+    if (cache.has("moon")) return cache.get("moon");
+    const [c, g] = canvas(128, 128);
+    g.fillStyle = "#fff";
+    g.beginPath();
+    g.arc(64, 64, 48, 0, Math.PI * 2);
+    g.fill();
+    // On retire un disque décalé : il reste le croissant.
+    g.globalCompositeOperation = "destination-out";
+    g.beginPath();
+    g.arc(86, 50, 44, 0, Math.PI * 2);
+    g.fill();
+    const t = toTexture(c);
+    cache.set("moon", t);
+    return t;
+}
+
 // Halo doux (sprites lumineux, particules).
 export function glowTexture() {
     if (cache.has("glow")) return cache.get("glow");

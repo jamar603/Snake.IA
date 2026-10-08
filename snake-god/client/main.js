@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GRID_SIZE } from "/shared/config.js";
 import { DEFAULT_COSMETICS } from "/shared/cosmetics.js";
-import { key } from "/shared/grid.js";
+import { cross, key } from "/shared/grid.js";
 import { MATCH_STATUS, S2C } from "/shared/protocol.js";
 import { AudioManager } from "./audio/AudioManager.js";
 import { GameAudio } from "./audio/GameAudio.js";
@@ -49,7 +49,10 @@ const net = new MultiplayerClient(() => ({ name: settings.profile.name, cosmetic
 const ui = new UIManager(settings);
 const hud = new Hud();
 const god = new GodController({ scene, camera, canvas, size: GRID_SIZE, net });
-const snakeInput = new SnakeInput((turn) => net.turn(turn));
+const snakeInput = new SnakeInput(
+    (turn) => net.turn(turn),
+    (skill) => net.useSkill(skill)
+);
 const audio = new AudioManager(settings);
 const gameAudio = new GameAudio(audio, (c) => cellToWorld(c, GRID_SIZE));
 gameAudio.bindInterface();
@@ -92,8 +95,9 @@ ui.addEventListener("profile", (e) => {
 ui.addEventListener("previewTier", (e) => menuStage.setShowcaseTier(e.detail));
 ui.addEventListener("quickPlay", (e) => {
     quickRole = e.detail;
-    net.quickPlay(e.detail);
+    net.quickPlay(e.detail, settings.get("matchDuration"));
 });
+ui.addEventListener("setDuration", (e) => net.setDuration(e.detail));
 ui.addEventListener("createRoom", (e) => {
     quickRole = undefined;
     net.createRoom(e.detail);
@@ -114,10 +118,33 @@ ui.addEventListener("endAction", (e) => {
         net.leaveRoom();
         enterMenu("main");
     } else if (e.detail === "lobby") net.backToLobby();
-    else if (quickRole !== undefined) net.quickPlay(quickRole);
+    else if (quickRole !== undefined) net.quickPlay(quickRole, settings.get("matchDuration"));
     else net.start();
 });
 hud.addEventListener("power", (e) => god.selectPower(e.detail));
+hud.addEventListener("skill", (e) => net.useSkill(e.detail));
+
+// ---------- Quitter la partie en cours ----------
+// Bouton ou Échap : confirmation, puis l'IA prend la place du joueur.
+const quitDialog = document.getElementById("quit-dialog");
+const quitOpen = () => !quitDialog.classList.contains("closed");
+function setQuitDialog(open) {
+    quitDialog.classList.toggle("closed", !open);
+    if (open) document.getElementById("quit-cancel").focus();
+}
+document.getElementById("quit-btn").addEventListener("click", () => setQuitDialog(true));
+document.getElementById("quit-cancel").addEventListener("click", () => setQuitDialog(false));
+document.getElementById("quit-confirm").addEventListener("click", () => {
+    setQuitDialog(false);
+    net.leaveRoom();
+    enterMenu("main");
+});
+quitDialog.addEventListener("click", (e) => e.target === quitDialog && setQuitDialog(false));
+window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || mode !== "game" || ui.screen === "end") return;
+    e.preventDefault();
+    setQuitDialog(!quitOpen());
+});
 god.addEventListener("change", () => hud.renderGodTools(god));
 hud.renderGodTools(god);
 
@@ -162,6 +189,7 @@ net.on(S2C.STATE, (msg) => {
 
 net.on(S2C.END, ({ summary }) => {
     if (mode !== "game") enterGame();
+    setQuitDialog(false);
     renderEnd(summary, myRole);
     gameAudio.onEnd(summary, myRole, state?.timeLeftMs === 0);
     const quick = room?.private && room?.name === "Partie rapide";
@@ -218,6 +246,7 @@ function resetMatchView() {
 function applyState(s) {
     const now = performance.now();
     world.applyState(s, now);
+    effects.floorY = world.floorY;
     env.setArena(s.arena.size);
     godCamera.setArena(s.arena.size);
 
@@ -234,6 +263,12 @@ function applyState(s) {
         const alive = sn.alive && sn.body.length;
         const run = alive ? world.freeRun(sn.body[0], sn.dir, occupied) : 0;
         view.setState(sn, run, alive && world.foodAhead(sn.body[0], sn.dir));
+        // Snake du joueur : place libre dans chaque direction de virage (flèches de guidage).
+        if (view.isMine && alive) {
+            const right = cross(sn.dir, sn.up);
+            const dirs = { right, left: right.map((v) => -v), up: sn.up, down: sn.up.map((v) => -v) };
+            view.setTurnRuns(Object.fromEntries(Object.entries(dirs).map(([t, d]) => [t, { dir: d, run: world.freeRun(sn.body[0], d, occupied) }])));
+        }
     }
     god.setState(s);
     if (mode === "game" && s.status !== MATCH_STATUS.ENDED) {
@@ -249,7 +284,12 @@ function applyState(s) {
 // Effets visuels déclenchés par les événements du serveur.
 function playEvents(s, size) {
     const pos = (c) => cellToWorld(c, size);
-    const shake = (amount) => settings.get("screenShake") && snakeCamera.shake(amount);
+    // Secousse sur la caméra active (Snake ou dieu), si le joueur l'a laissée activée.
+    const shake = (amount) => {
+        if (!settings.get("screenShake")) return;
+        if (cameraMode === "snake") snakeCamera.shake(amount);
+        else godCamera.shake(amount);
+    };
     for (const ev of s.events) {
         const p = ev.cells?.[0] && pos(ev.cells[0]);
         const view = ev.snake && snakeViews.get(ev.snake);
@@ -257,22 +297,27 @@ function playEvents(s, size) {
         switch (ev.type) {
             case "foodEaten":
                 view?.onEat(ev.golden);
+                if (ev.snake === myRole && cameraMode === "snake") snakeCamera.punch(ev.golden ? 0.45 : 0.18);
                 effects.burst(p, ev.golden ? 0xffd34d : 0x9dff6a, { count: ev.golden ? 70 : 28, speed: ev.golden ? 4 : 2.6 });
                 if (ev.golden) effects.ring(p, 0xffd34d, { size: 2 });
                 break;
             case "damage":
                 view?.onHurt();
-                effects.burst(p, 0xff3b5c, { count: 60, speed: 5 });
-                effects.ring(p, 0xff3b5c, { size: 1.2, normal: new THREE.Vector3().randomDirection() });
+                effects.explosion(p, { color: 0xff3b5c, hot: 0xffd0d8, scale: 0.7, smoke: false, sparks: 0.8 });
                 if (ev.snake === myRole) {
                     shake(0.45);
                     postfx.pulse(0.8);
+                } else if (ev.byGod && myRole === "god") {
+                    // Le dieu sent que son piège a porté : retour court, moins fort que pour la victime.
+                    shake(0.25);
+                    postfx.pulse(0.4);
                 }
                 break;
             case "eliminated":
-                effects.burst(p, glow, { count: 180, speed: 7, life: 1.4, size: 0.35 });
-                effects.burst(p, 0xffffff, { count: 40, speed: 3, life: 0.8 });
+                effects.explosion(p, { color: glow, scale: 1.8, debris: 30, debrisColor: glow });
+                effects.burst(p, glow, { count: 120, speed: 7, life: 1.4, size: 0.35, endColor: 0x2a1040 });
                 effects.ring(p, glow, { size: 4, life: 1 });
+                shake(0.6);
                 postfx.pulse(1);
                 break;
             case "healed":
@@ -289,18 +334,35 @@ function playEvents(s, size) {
                 effects.burst(p, 0xffd34d, { count: 90, speed: 4.5, life: 1.1 });
                 postfx.pulse(0.8);
                 break;
+            case "shieldBlocked":
+                view?.model.breakShield();
+                effects.explosion(p, { color: glow, hot: 0xffffff, scale: 0.8, smoke: false, debris: 12, debrisColor: glow, sparks: 0.6 });
+                if (ev.snake === myRole) shake(0.25);
+                break;
+            case "skillUsed":
+                if (ev.skill === "sprint") {
+                    effects.ring(p, glow, { size: 1.2, life: 0.35, normal: new THREE.Vector3(...(state?.snakes.find((sn) => sn.id === ev.snake)?.dir ?? [0, 1, 0])) });
+                    effects.burst(p, glow, { count: 24, speed: 3, life: 0.4 });
+                } else if (ev.skill === "shield") {
+                    effects.ring(p, glow, { size: 1, life: 0.3 });
+                } else if (ev.skill === "phase") {
+                    effects.burst(p, 0xe6f4ff, { count: 30, speed: 1.6, life: 0.6, endColor: glow });
+                }
+                break;
             case "trapPlaced":
                 effects.ring(p, 0xff3b5c, { size: 1 });
                 break;
             case "trapTriggered":
-                effects.burst(p, 0xff8a3b, { count: 50, speed: 4 });
+                world.triggerTrap(ev.cells[0]);
+                effects.explosion(p, { color: 0xff4a2e, scale: 1, debris: 14, debrisColor: 0x2b2233 });
                 break;
             case "wallPlaced":
                 for (const c of ev.cells) effects.burst(pos(c), 0xc47dff, { count: 14, speed: 2.4 });
                 effects.ring(p, 0xc47dff, { size: 1.6 });
                 break;
             case "wallDemolished":
-                for (const c of ev.cells) effects.burst(pos(c), 0x9fc0ff, { count: 26, speed: 3.5, gravity: 4, life: 1 });
+                for (const c of ev.cells) effects.explosion(pos(c), { color: 0x9fc0ff, hot: 0xe8f0ff, scale: 0.7, debris: 10, debrisColor: 0x3a3352, sparks: 0.5 });
+                shake(0.2);
                 break;
             case "wallRotated":
                 for (const c of ev.cells) effects.burst(pos(c), 0xff6bf0, { count: 6, speed: 1.4, life: 0.5 });
@@ -314,8 +376,8 @@ function playEvents(s, size) {
             case "zoneActive":
                 for (const c of ev.cells) {
                     const meteor = ev.kind === "meteor";
-                    effects.burst(pos(c), meteor ? 0xff7a2e : 0xff2e4d, { count: meteor ? 40 : 12, speed: meteor ? 5 : 2, gravity: meteor ? 3 : 0 });
-                    if (meteor) effects.ring(pos(c), 0xffb050, { size: 1.4 });
+                    if (meteor) effects.explosion(pos(c), { color: 0xff7a2e, scale: 0.9, debris: 8, debrisColor: 0x4b3a2c });
+                    else effects.burst(pos(c), 0xff2e4d, { count: 12, speed: 2, endColor: 0x401018 });
                 }
                 if (ev.kind === "meteor") {
                     shake(0.3);
@@ -407,8 +469,15 @@ function frame() {
         const alpha = state ? Math.min(1, (now - stateTime) / state.tickMs) : 1;
         for (const v of snakeViews.values()) v.update(alpha, now, dt);
         const myView = snakeViews.get(myRole);
+        world.setFocus(myView?.cur?.alive ? myView.headPos : null);
         if (cameraMode === "snake" && myView) snakeCamera.update(myView.headPos, myView.headQuat, dt);
         else godCamera.update(dt);
+        // Sprint : le champ de vision s'élargit (ease-out à l'entrée, retour doux).
+        const fov = settings.get("fov") + (cameraMode === "snake" && myView?.sprinting ? 9 : 0);
+        if (Math.abs(camera.fov - fov) > 0.05) {
+            camera.fov += (fov - camera.fov) * (1 - Math.exp(-dt * (fov > camera.fov ? 12 : 5)));
+            camera.updateProjectionMatrix();
+        }
     }
     audio.updateListener(camera);
     postfx.render(dt);
@@ -424,7 +493,7 @@ net.on(S2C.WELCOME, () => {
     if (play && !room) {
         params.delete("play");
         quickRole = play === "demo" ? null : play;
-        net.quickPlay(quickRole);
+        net.quickPlay(quickRole, settings.get("matchDuration"));
     }
 });
 ui.show("main", { push: false });

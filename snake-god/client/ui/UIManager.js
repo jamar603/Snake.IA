@@ -1,4 +1,4 @@
-import { ROLE_INFO } from "/shared/config.js";
+import { MATCH_DURATIONS, ROLE_INFO, durationLabel } from "/shared/config.js";
 import { ACCESSORIES, EVOLUTIONS, SKINS, TRAILS } from "/shared/cosmetics.js";
 import { AUDIO_CATEGORIES } from "../audio/AudioManager.js";
 import { QUALITY } from "../settings.js";
@@ -31,7 +31,33 @@ export class UIManager extends EventTarget {
         this.#bindCustomize();
         this.#bindSettings();
         this.#bindEnd();
+        this.#bindDurations();
         this.renderProfile();
+    }
+
+    // ---------- Durée de la partie ----------
+    // Solo : préférence du joueur (gardée). Salon : choisie par l'hôte, vue par tous.
+    #bindDurations() {
+        for (const seg of document.querySelectorAll("[data-duration-seg]")) {
+            seg.innerHTML = MATCH_DURATIONS.map((s) => `<button data-seconds="${s}">${durationLabel(s)}</button>`).join("");
+            for (const b of seg.querySelectorAll("button")) {
+                b.addEventListener("click", () => {
+                    const s = Number(b.dataset.seconds);
+                    if (seg.dataset.durationSeg === "solo") {
+                        this.settings.set("matchDuration", s);
+                        this.#markDuration(seg, s);
+                    } else this.emit("setDuration", s);
+                });
+            }
+        }
+        this.#markDuration(document.querySelector('[data-duration-seg="solo"]'), this.settings.get("matchDuration"));
+    }
+
+    #markDuration(seg, seconds, { locked = false } = {}) {
+        for (const b of seg.querySelectorAll("button")) {
+            b.classList.toggle("active", Number(b.dataset.seconds) === seconds);
+            b.disabled = locked;
+        }
     }
 
     emit(type, detail) {
@@ -163,6 +189,8 @@ export class UIManager extends EventTarget {
             )
             .join("");
         const isHost = room.hostId === myId;
+        this.#markDuration(document.querySelector('[data-duration-seg="room"]'), room.duration, { locked: !isHost });
+        $("duration-host-only").classList.toggle("hidden", isHost);
         $("start-btn").classList.toggle("hidden", !isHost);
         $("room-wait").classList.toggle("hidden", isHost);
     }

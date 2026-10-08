@@ -11,6 +11,13 @@ export const POWER_ICONS = {
     dangerZone: svg(`<path d="M16 4L29 27H3z"/><path d="M16 12v7M16 23v.5"/>`),
 };
 
+// Icônes des compétences des Snakes.
+export const SKILL_ICONS = {
+    sprint: svg(`<path d="M4 10h9M2 16h11M4 22h9"/><path d="M15 7l11 9-11 9z"/>`),
+    shield: svg(`<path d="M16 3l11 4v8c0 7-5 11.5-11 14C10 26.5 5 22 5 15V7z"/><path d="M11 16l3.5 3.5L21 12"/>`),
+    phase: svg(`<circle cx="12" cy="16" r="7" stroke-dasharray="3 3"/><circle cx="20" cy="16" r="7"/>`),
+};
+
 export const EVENT_ICONS = {
     goldenFruit: "🍎",
     foodRain: "🌧",

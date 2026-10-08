@@ -24,6 +24,25 @@ export class SnakeAI {
             if (!best || score > best.score) best = { ...move, score };
         }
         if (best.turn) s.queueTurn(best.turn);
+        this.#useSkills(best, nav);
+    }
+
+    // Compétences, comme un joueur : Phase pour sortir d'une impasse, Bouclier face à
+    // un danger imminent, Sprint pour attraper une nourriture proche en ligne droite.
+    #useSkills(best, nav) {
+        const s = this.snake;
+        const game = nav.game;
+        const now = game.now;
+        const ready = (id) => s.skills.isReady(id, now);
+        const next = add(s.head, best.dir);
+        if (best.score <= -1000 && ready("phase")) {
+            game.handleSkill(s.id, "phase");
+        } else if ((best.score <= -400 || nav.dangerAt(next) >= 40) && ready("shield")) {
+            game.handleSkill(s.id, "shield");
+        } else if (ready("sprint") && best.score > 0) {
+            const food = nav.pathToFood(next, 6);
+            if (food && food.dist >= 2 && this.rng() < 0.5) game.handleSkill(s.id, "sprint");
+        }
     }
 
     #score(dir, nav) {

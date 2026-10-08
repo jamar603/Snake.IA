@@ -1,7 +1,7 @@
-import { POWERS, POWER_IDS, ROLE_INFO, WORLD_EVENTS } from "/shared/config.js";
+import { POWERS, POWER_IDS, ROLE_INFO, SKILLS, SKILL_IDS, WORLD_EVENTS } from "/shared/config.js";
 import { EVOLUTIONS, SKINS, evolutionFor } from "/shared/cosmetics.js";
 import { PHASE_COLORS } from "../render/Environment.js";
-import { POWER_ICONS } from "./icons.js";
+import { POWER_ICONS, SKILL_ICONS } from "./icons.js";
 import { escapeHtml } from "./util.js";
 
 const $ = (id) => document.getElementById(id);
@@ -52,10 +52,52 @@ export class Hud extends EventTarget {
             intelFood: $("intel-food"),
             notices: $("notices"),
             vignette: $("vignette"),
+            skills: $("skills"),
+            godHint: $("god-hint"),
         };
         this.lastHp = {};
         this.showHelp = true;
         this.#buildPowers();
+        this.#buildSkills();
+    }
+
+    #buildSkills() {
+        this.skillButtons = {};
+        this.skillReady = {};
+        for (const id of SKILL_IDS) {
+            const s = SKILLS[id];
+            const btn = document.createElement("button");
+            btn.className = "skill";
+            btn.title = `${s.label} (${s.keyLabel}) : ${s.description}`;
+            btn.innerHTML = `<span class="s-key">${s.keyLabel}</span>${SKILL_ICONS[id]}<span class="s-name">${s.label}</span>`;
+            btn.addEventListener("click", () => this.dispatchEvent(new CustomEvent("skill", { detail: id })));
+            this.el.skills.appendChild(btn);
+            this.skillButtons[id] = btn;
+            this.skillReady[id] = true;
+        }
+    }
+
+    #renderSkills(snake) {
+        if (!snake.skills) return;
+        const color = ROLE_INFO[snake.id]?.css;
+        for (const id of SKILL_IDS) {
+            const btn = this.skillButtons[id];
+            const { activeMs, readyInMs } = snake.skills[id];
+            const skill = SKILLS[id];
+            btn.style.setProperty("--c", color);
+            btn.style.setProperty("--cd", readyInMs / skill.cooldownMs);
+            btn.style.setProperty("--active", activeMs / skill.durationMs);
+            btn.classList.toggle("active", activeMs > 0);
+            btn.classList.toggle("cooling", readyInMs > 0 && activeMs === 0);
+            // De nouveau prête : petit rebond (une seule fois), le joueur le voit du coin de l'œil.
+            const ready = readyInMs === 0;
+            if (ready && !this.skillReady[id]) {
+                btn.classList.remove("just-ready");
+                void btn.offsetWidth;
+                btn.classList.add("just-ready");
+            }
+            this.skillReady[id] = ready;
+        }
     }
 
     #buildPowers() {
@@ -93,10 +135,14 @@ export class Hud extends EventTarget {
     }
 
     render(state) {
-        const secs = Math.ceil(state.timeLeftMs / 1000);
+        // Partie illimitée : temps écoulé (∞) et objectif des Snakes ; sinon temps restant.
+        const unlimited = state.timeLeftMs == null;
+        const secs = unlimited ? Math.floor(state.elapsedMs / 1000) : Math.ceil(state.timeLeftMs / 1000);
         this.el.timer.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-        this.el.timer.classList.toggle("urgent", secs <= 20 && state.status === "playing");
-        this.el.phase.textContent = `Phase ${state.phase} · ${state.phaseName} · ${state.arena.size}³`;
+        this.el.timer.classList.toggle("unlimited", unlimited);
+        this.el.timer.classList.toggle("urgent", !unlimited && secs <= 20 && state.status === "playing");
+        const goal = unlimited ? ` · Objectif Snakes : taille ${state.winLength}` : "";
+        this.el.phase.textContent = `Phase ${state.phase} · ${state.phaseName} · ${state.arena.size}³${goal}`;
         this.el.phase.style.setProperty("--phase", `#${PHASE_COLORS[state.phase].getHexString()}`);
 
         const countdown = state.status === "countdown";
@@ -118,7 +164,10 @@ export class Hud extends EventTarget {
             this.#renderIntel(state.intel);
         }
         const mine = state.snakes.find((s) => s.id === this.role);
-        if (mine) this.#renderEvolution(mine);
+        if (mine) {
+            this.#renderEvolution(mine);
+            this.#renderSkills(mine);
+        }
     }
 
     #snakeCard(s) {
@@ -175,8 +224,15 @@ export class Hud extends EventTarget {
         this.el.intelFood.textContent = intel.upcomingFood.length;
     }
 
-    renderGodTools({ power, axis, layer }) {
+    renderGodTools({ power, axis, layer, hint }) {
         for (const id of POWER_IDS) this.powerButtons[id].classList.toggle("selected", id === power);
+        // Pouvoir choisi : ce qu'il fait, ou pourquoi il ne peut pas partir ici.
+        const help = this.el.godHint;
+        if (help) {
+            const bad = hint && !hint.ok;
+            help.textContent = bad ? hint.reason : `${POWERS[power].label} : ${POWERS[power].description}`;
+            help.classList.toggle("bad", !!bad);
+        }
         this.el.axisValue.textContent = power === "trap" || power === "demolish" ? "—" : axis;
         this.el.layerValue.textContent = layer;
     }
@@ -194,6 +250,7 @@ export class Hud extends EventTarget {
             }
             if (ev.type === "phase") this.banner(`Phase ${ev.phase}`, "Le monde se durcit", `#${PHASE_COLORS[ev.phase].getHexString()}`);
             if (ev.type === "healed" && ev.snake === myRole) this.notice("+1 PV !");
+            if (ev.type === "shieldBlocked" && ev.snake === myRole) this.notice("Bouclier : coup bloqué !");
             if (ev.type === "evolved" && ev.snake === myRole) this.banner(`Évolution : ${ev.name}`, "Ton Snake devient plus puissant", "#ffd34d");
             if (ev.type === "expansionStart") {
                 const why = { time: "Le temps presse…", growth: "Les Snakes grandissent : l'arène s'agrandit…", density: "Le monde étouffe : l'arène s'agrandit…" };

@@ -119,6 +119,7 @@ export class MultiplayerManager {
                 // Salon privé, le joueur prend son rôle (ou regarde), l'IA fait le reste.
                 this.#leave(player);
                 const room = this.#createRoom("Partie rapide", true);
+                room.setDuration(msg.duration);
                 room.add(player);
                 room.handle(player, { t: C2S.CHOOSE_ROLE, role: msg.role ?? null });
                 room.start();

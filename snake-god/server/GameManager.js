@@ -4,7 +4,9 @@ import {
     GRID_SIZE,
     MATCH_SECONDS,
     PHASES,
+    SKILLS,
     STARTING_PILLARS,
+    UNLIMITED,
     UPCOMING_FOOD_PREVIEW,
     WORLD,
     WORLD_EVENTS,
@@ -49,10 +51,30 @@ export class GameManager {
         this.size = size;
         this.sizes = [startSize, ...WORLD.sizes.filter((s) => s > startSize && s <= size)];
         this.expansionEnabled = expansion;
-        this.matchMs = matchSeconds * 1000;
+        this.setDuration(matchSeconds);
         this.countdownMs = countdownSeconds * 1000;
         this.status = MATCH_STATUS.LOBBY;
         this.summary = null;
+    }
+
+    // Durée de la partie en secondes ; 0 (ou null) = illimitée.
+    setDuration(seconds) {
+        this.matchMs = seconds > 0 ? seconds * 1000 : Infinity;
+    }
+
+    get unlimited() {
+        return !Number.isFinite(this.matchMs);
+    }
+
+    // Partie courte : le dieu se recharge plus vite pour avoir le temps d'agir
+    // (x2 en 1 min 30, x1 en 3 min ou en illimité).
+    get energyBoost() {
+        return this.unlimited ? 1 : Math.min(2, Math.max(1, (UNLIMITED.pacingSeconds * 1000) / this.matchMs));
+    }
+
+    // Rythme des phases et des expansions : la durée de la partie, ou 3 min en illimité.
+    get pacingMs() {
+        return this.unlimited ? UNLIMITED.pacingSeconds * 1000 : this.matchMs;
     }
 
     // roster : { snake1?, snake2?, god? } avec pour chaque rôle un nom (humain)
@@ -77,6 +99,8 @@ export class GameManager {
         this.countdownLeft = this.countdownMs;
         this.tickCount = 0;
         this.events = [];
+        this.queued = []; // événements reçus entre deux ticks (pouvoirs, compétences)
+        this.inTick = false;
         this.summary = null;
 
         this.grid.addOccupant((k) => this.walls.isWall(k));
@@ -140,7 +164,7 @@ export class GameManager {
         const alive = this.snakes.filter((s) => s.alive);
         const totalLength = alive.reduce((n, s) => n + s.length, 0);
         const density = (this.walls.cellIndex.size + totalLength) / this.grid.volume;
-        const ev = this.expansion.update(this.now, { progress: this.now / this.matchMs, totalLength, density });
+        const ev = this.expansion.update(this.now, { progress: this.now / this.pacingMs, totalLength, density });
         if (!ev) return;
         if (ev.type === "start") {
             this.events.push({ type: "expansionStart", fromSize: ev.fromSize, toSize: ev.toSize, inMs: ev.inMs, reason: ev.reason });
@@ -154,7 +178,7 @@ export class GameManager {
     }
 
     get phase() {
-        const progress = this.now / this.matchMs;
+        const progress = this.now / this.pacingMs;
         let current = PHASES[0];
         for (const p of PHASES) if (progress >= p.from) current = p;
         return current;
@@ -165,7 +189,7 @@ export class GameManager {
     }
 
     get timeLeftMs() {
-        return Math.max(0, this.matchMs - this.now);
+        return this.unlimited ? null : Math.max(0, this.matchMs - this.now);
     }
 
     // L'IA prend (ou rend) le contrôle d'un rôle, par exemple quand un joueur se déconnecte.
@@ -191,13 +215,38 @@ export class GameManager {
     handlePower(request) {
         if (this.status !== MATCH_STATUS.PLAYING) return { ok: false, error: "La partie n'a pas commencé." };
         const result = this.god.use(request, this.now, this.phase.id);
-        if (result.ok) this.events.push({ ...result.event, power: request.power });
+        if (result.ok) this.#emit({ ...result.event, power: request.power });
         return result;
+    }
+
+    // Compétence d'un Snake (Sprint, Bouclier, Phase). Renvoie true si elle part.
+    handleSkill(role, id) {
+        const snake = this.getSnake(role);
+        if (this.status !== MATCH_STATUS.PLAYING || !snake?.alive || !SKILLS[id]) return false;
+        if (!snake.skills.use(id, this.now)) return false;
+        this.#emit({ type: "skillUsed", skill: id, snake: snake.id, cells: [snake.head] });
+        return true;
+    }
+
+    // Hors tick (message d'un joueur), l'événement attend le prochain tick : sinon
+    // il serait effacé avant d'être envoyé.
+    #emit(event) {
+        (this.inTick ? this.events : this.queued).push(event);
     }
 
     // Avance la simulation de `dtMs`. Renvoie les événements du tick (pour les effets visuels).
     tick(dtMs) {
-        this.events = [];
+        this.events = this.queued ?? [];
+        this.queued = [];
+        this.inTick = true;
+        try {
+            return this.#tick(dtMs);
+        } finally {
+            this.inTick = false;
+        }
+    }
+
+    #tick(dtMs) {
         if (this.status === MATCH_STATUS.COUNTDOWN) {
             this.countdownLeft -= dtMs;
             if (this.countdownLeft <= 0) this.status = MATCH_STATUS.PLAYING;
@@ -210,7 +259,7 @@ export class GameManager {
         this.tickCount++;
         if (this.phase.id !== previousPhase) this.events.push({ type: "phase", phase: this.phase.id });
 
-        this.god.regenerate(dtMs, this.phase.energyPerSec);
+        this.god.regenerate(dtMs, this.phase.energyPerSec * this.energyBoost);
         if (this.godAI && this.isAi("god")) this.godAI.update(new Navigation(this));
         this.#updateWalls();
         this.#updateWorld();
@@ -233,7 +282,7 @@ export class GameManager {
             for (const c of ev.cells) this.traps.remove(c);
             this.food.removeAt(ev.cells);
             for (const s of this.snakes) {
-                if (s.alive && s.body.some((c) => crushed.has(key(c)))) this.#hitSnake(s, "crushed", true);
+                if (s.alive && !this.#phasing(s) && s.body.some((c) => crushed.has(key(c)))) this.#hitSnake(s, "crushed", true);
             }
         }
     }
@@ -257,20 +306,42 @@ export class GameManager {
             for (const s of aiSnakes) this.snakeAIs.get(s.id).decide(nav);
         }
         for (const s of alive) s.applyQueuedTurn();
+        this.#step(alive);
+        // Sprint : un second pas dans le même tick (virage en attente compris).
+        const sprinting = this.snakes.filter((s) => s.alive && s.skills.isActive("sprint", this.now));
+        const aiSprinting = sprinting.filter((s) => this.isAi(s.id));
+        if (aiSprinting.length) {
+            const nav = new Navigation(this);
+            for (const s of aiSprinting) this.snakeAIs.get(s.id).decide(nav);
+        }
+        for (const s of sprinting) s.applyQueuedTurn();
+        if (sprinting.length) this.#step(sprinting);
+    }
 
+    // Phase : le Snake traverse murs, pièges et corps (pas les bords).
+    #phasing(s) {
+        return s.skills.isActive("phase", this.now);
+    }
+
+    // Un pas de déplacement pour `movers` (les autres Snakes restent des obstacles).
+    #step(movers) {
+        const alive = this.snakes.filter((s) => s.alive);
         // Occupation des corps au prochain tick : la queue d'un Snake qui ne grandit pas se libère.
         const occupancy = new Map();
         for (const s of alive) {
-            if (s.health.isInvulnerable(this.now)) continue; // un Snake "fantôme" ne bloque personne
-            const cells = s.willGrow() ? s.body : s.body.slice(0, -1);
+            if (s.health.isInvulnerable(this.now) || this.#phasing(s)) continue; // un Snake "fantôme" ne bloque personne
+            const moving = movers.includes(s);
+            const cells = !moving || s.willGrow() ? s.body : s.body.slice(0, -1);
             for (const c of cells) occupancy.set(key(c), (occupancy.get(key(c)) ?? 0) + 1);
         }
 
-        const plans = alive.map((s) => ({ snake: s, next: s.nextHead(), hit: null }));
+        const plans = movers.filter((s) => s.alive).map((s) => ({ snake: s, next: s.nextHead(), hit: null }));
         for (const p of plans) {
             const k = key(p.next);
-            const ghost = p.snake.health.isInvulnerable(this.now);
+            const phasing = this.#phasing(p.snake);
+            const ghost = p.snake.health.isInvulnerable(this.now) || phasing;
             if (!this.grid.inBounds(p.next)) p.hit = { cause: "boundary", byGod: false };
+            else if (phasing) continue;
             else if (this.walls.isWall(k)) {
                 const wall = this.walls.walls.get(this.walls.cellIndex.get(k));
                 p.hit = { cause: "wall", byGod: wall.kind !== "pillar" };
@@ -280,7 +351,7 @@ export class GameManager {
         for (const a of plans) {
             for (const b of plans) {
                 if (a === b || a.hit) continue;
-                const ghost = a.snake.health.isInvulnerable(this.now) || b.snake.health.isInvulnerable(this.now);
+                const ghost = [a.snake, b.snake].some((s) => s.health.isInvulnerable(this.now) || this.#phasing(s));
                 if (!ghost && equals(a.next, b.next)) a.hit = { cause: "headOn", byGod: false };
             }
         }
@@ -292,7 +363,7 @@ export class GameManager {
                 continue;
             }
             s.advance(p.next);
-            if (!s.health.isInvulnerable(this.now) && this.traps.trigger(s.head)) {
+            if (!s.health.isInvulnerable(this.now) && !this.#phasing(s) && this.traps.trigger(s.head)) {
                 s.trapsTriggered++;
                 this.events.push({ type: "trapTriggered", cells: [s.head], snake: s.id });
                 this.#damage(s, "trap", true);
@@ -323,8 +394,16 @@ export class GameManager {
 
     #damage(snake, cause, byGod) {
         const cell = snake.head;
+        if (snake.health.isInvulnerable(this.now)) return;
+        // Bouclier : encaisse le coup à la place des PV, puis courte invulnérabilité.
+        if (snake.skills.isActive("shield", this.now)) {
+            snake.skills.end("shield");
+            snake.health.invulnerableUntil = this.now + 600;
+            this.events.push({ type: "shieldBlocked", cells: [cell], snake: snake.id, cause });
+            return;
+        }
         if (!snake.health.damage(this.now)) return;
-        this.events.push({ type: "damage", cells: [cell], snake: snake.id, cause });
+        this.events.push({ type: "damage", cells: [cell], snake: snake.id, cause, byGod: !!byGod });
         this.scores.onSnakeDamaged(snake, byGod);
         if (snake.health.dead) {
             snake.eliminate(this.now);
@@ -367,6 +446,8 @@ export class GameManager {
     #checkEnd() {
         if (this.snakes.length > 0 && this.snakes.every((s) => !s.alive)) return this.#end("god");
         if (this.now >= this.matchMs) return this.#end(this.snakes.some((s) => s.alive) ? "snakes" : "god");
+        // Illimité : les Snakes gagnent quand l'un d'eux atteint la longueur cible.
+        if (this.unlimited && this.snakes.some((s) => s.alive && s.length >= UNLIMITED.winLength)) return this.#end("snakes");
     }
 
     #end(winner) {
@@ -401,7 +482,9 @@ export class GameManager {
             tickMs: phase.tickMs,
             phase: phase.id,
             phaseName: phase.name,
-            timeLeftMs: this.timeLeftMs,
+            timeLeftMs: this.timeLeftMs, // null en partie illimitée
+            durationMs: this.unlimited ? null : this.matchMs,
+            winLength: this.unlimited ? UNLIMITED.winLength : null,
             elapsedMs: this.now,
             countdownMs: Math.max(0, this.countdownLeft),
             size: this.size,

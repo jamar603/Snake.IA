@@ -1,5 +1,20 @@
 import * as THREE from "three";
-import { glowTexture, runeRingTexture } from "./textures.js";
+import { worldPieces } from "./assets.js";
+import { glowTexture, moonTexture, runeRingTexture } from "./textures.js";
+
+// Île de blender/build_island.py : socle prévu pour le plus grand cube, entouré
+// d'une bande d'herbe de MARGIN cases où poussent les décors.
+const MARGIN = 2.4;
+const PROPS = ["TreeTeal", "Pine", "Bush", "TreePink", "Rock", "Lantern", "Crate", "Bush"];
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+// Courbe « ease-out » forte (cubic-bezier(0.23, 1, 0.32, 1) approchée) : réponse immédiate.
+const easeOut = (t) => 1 - Math.pow(1 - t, 4);
+// Hachage stable : même arène, même décor.
+const hash = (a, b) => {
+    const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+};
 
 // Couleur dominante du monde à chaque phase : la tension se lit dans la lumière.
 export const PHASE_COLORS = {
@@ -32,7 +47,8 @@ float fbm(vec3 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { 
 void main() {
     vec3 d = normalize(vDir);
     float h = d.y * 0.5 + 0.5;
-    vec3 col = mix(vec3(0.012, 0.01, 0.03), vec3(0.03, 0.035, 0.09), h);
+    // Nuit violette : plus claire en haut, comme un ciel de conte.
+    vec3 col = mix(vec3(0.012, 0.01, 0.03), vec3(0.07, 0.05, 0.16), smoothstep(0.35, 1.0, h));
     float neb = fbm(d * 2.4 + vec3(uTime * 0.01, 0.0, 0.0));
     float neb2 = fbm(d * 4.0 - vec3(0.0, uTime * 0.008, 0.0));
     col += uTint * pow(neb, 3.0) * 0.38;
@@ -89,36 +105,56 @@ export class Environment {
         this.platform.add(this.runes);
         scene.add(this.platform);
 
-        // Poussières lumineuses autour du monde.
+        // Lucioles autour du monde : chaudes près de l'île, froides au loin.
         const n = 500;
         const pos = new Float32Array(n * 3);
+        const col = new Float32Array(n * 3);
+        const warm = new THREE.Color(0xffd27a);
+        const cool = new THREE.Color(0xc9b2ff);
+        const c = new THREE.Color();
         for (let i = 0; i < n; i++) {
-            const r = size * (0.8 + Math.random() * 2.2);
+            const k = Math.random();
+            const r = size * (0.8 + k * 2.2);
             const a = Math.random() * Math.PI * 2;
             pos.set([Math.cos(a) * r, (Math.random() - 0.4) * size * 2.2, Math.sin(a) * r], i * 3);
+            c.copy(warm).lerp(cool, Math.min(1, k * 1.6));
+            col.set([c.r, c.g, c.b], i * 3);
         }
         const dustGeo = new THREE.BufferGeometry();
         dustGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        dustGeo.setAttribute("color", new THREE.BufferAttribute(col, 3));
         this.dust = new THREE.Points(
             dustGeo,
             new THREE.PointsMaterial({
-                size: 0.12,
+                size: 0.14,
                 map: glowTexture(),
-                color: 0xc9b2ff,
+                vertexColors: true,
                 transparent: true,
-                opacity: 0.7,
+                opacity: 0.75,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
             })
         );
         scene.add(this.dust);
 
+        // Lune en croissant, loin derrière le monde.
+        this.moon = new THREE.Group();
+        const moonSprite = (map, opacity, scale) => {
+            const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, color: 0xffd9a0, transparent: true, opacity, fog: false, depthWrite: false }));
+            s.scale.setScalar(scale);
+            return s;
+        };
+        this.moon.add(moonSprite(glowTexture(), 0.35, 22), moonSprite(moonTexture(), 1, 7));
+        this.moon.position.set(-38, 30, -50);
+        scene.add(this.moon);
+        this.islets = [];
+
         scene.add(new THREE.HemisphereLight(0xb9c6ff, 0x1a0f2e, 1.1));
         this.key = new THREE.DirectionalLight(0xfff1e0, 2.2);
         this.key.position.set(7, 15, 9);
         this.key.castShadow = true;
         this.key.shadow.mapSize.set(1024, 1024);
-        Object.assign(this.key.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 50 });
+        Object.assign(this.key.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 60 });
         this.key.shadow.bias = -0.0008;
         scene.add(this.key);
         const rim = new THREE.DirectionalLight(0x7fb6ff, 1.2);
@@ -130,11 +166,168 @@ export class Environment {
         scene.add(this.godLight);
 
         scene.fog = new THREE.FogExp2(0x070612, 0.018);
+
+        this.props = []; // décors posés autour du cube
+        this.leaving = []; // décors de l'arène précédente, en train de partir
+        this.#loadIsland();
+    }
+
+    // Charge l'île ; en attendant (ou si le fichier manque), le disque runique reste seul.
+    async #loadIsland() {
+        const pieces = await worldPieces;
+        if (!pieces) return;
+
+        this.island = pieces.Island;
+        this.island.castShadow = false;
+        this.platform.add(this.island);
+        this.platform.children[0].visible = false; // ancien disque
+        this.runes.position.y = 0.08; // gravé dans les dalles
+
+        // Dalles : une par cellule du sol, toutes dans un seul InstancedMesh.
+        const tile = pieces.Tile;
+        this.tiles = new THREE.InstancedMesh(tile.geometry, tile.material, this.size * this.size);
+        this.tiles.receiveShadow = true;
+        this.tiles.count = 0;
+        this.platform.add(this.tiles);
+        this.tileCells = []; // { x, z, bornAt }
+
+        // Lanterne : un halo chaud sur la lampe, que le bloom prolonge.
+        const lantern = pieces.Lantern;
+        const halo = new THREE.Sprite(
+            new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffb347, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })
+        );
+        halo.position.y = 1.74;
+        halo.scale.setScalar(1.4);
+        lantern.add(halo);
+
+        // Îlots flottants au loin, chacun avec un arbre : le monde continue au-delà du cube.
+        for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2 + hash(i, 1) * 0.5;
+            const r = 24 + hash(i, 2) * 12;
+            const islet = pieces.Islet.clone();
+            islet.position.set(Math.cos(a) * r, -8 + hash(i, 3) * 14, Math.sin(a) * r);
+            islet.scale.setScalar(0.9 + hash(i, 4) * 1.1);
+            islet.rotation.y = hash(i, 5) * 6;
+            const tree = pieces[["TreeTeal", "TreePink", "Pine"][i % 3]].clone();
+            tree.scale.setScalar(0.8);
+            islet.add(tree);
+            islet.traverse((o) => (o.castShadow = false));
+            islet.userData.baseY = islet.position.y;
+            this.scene.add(islet);
+            this.islets.push(islet);
+        }
+
+        this.templates = pieces;
+        this.layoutSize = null;
+        this.#layout(this.arenaTarget ?? this.size, false);
+    }
+
+    // Place dalles et décors pour une arène de `n` cases. `animate` : les nouvelles dalles
+    // montent du sol en vague depuis l'ancien bord, les décors repoussent un par un.
+    #layout(n, animate) {
+        if (!this.templates || n === this.layoutSize) return;
+        const previous = this.layoutSize ?? 0;
+        this.layoutSize = n;
+        const now = performance.now();
+        const motion = animate && !reducedMotion.matches;
+
+        // Dalles : on garde celles de l'ancienne arène, on ajoute la couronne extérieure.
+        const o = (n - 1) / 2;
+        const oldHalf = (previous - 1) / 2;
+        const cells = [];
+        for (let x = 0; x < n; x++)
+            for (let z = 0; z < n; z++) {
+                const ring = Math.max(Math.abs(x - o), Math.abs(z - o));
+                const kept = previous && ring <= oldHalf;
+                const delay = motion && !kept ? (ring - oldHalf) * 70 + hash(x, z) * 60 : 0;
+                cells.push({ x: x - o, z: z - o, bornAt: kept || !motion ? -Infinity : now + delay });
+            }
+        this.tileCells = cells;
+        this.tiles.count = cells.length;
+        this.#updateTiles(now);
+
+        // Décors : les anciens partent vite, les nouveaux poussent avec un léger décalage.
+        for (const p of this.props) p.leaveAt = now;
+        this.leaving.push(...this.props);
+        if (!motion) this.#flushLeaving();
+        this.props = [];
+        const edge = n / 2 + 1.15;
+        const perSide = Math.max(3, Math.round((2 * edge) / 1.7));
+        let i = 0;
+        for (let side = 0; side < 4; side++) {
+            for (let k = 0; k < perSide; k++) {
+                const r = hash(side + n, k);
+                if (r < 0.18) continue; // trous : le décor respire
+                const t = -edge + ((k + 0.5) / perSide) * 2 * edge + (r - 0.5) * 0.5;
+                const inward = (hash(k, side * 7 + n) - 0.5) * 0.8;
+                const d = edge + inward;
+                const [x, z] = [[t, -d], [d, t], [-t, d], [-d, -t]][side];
+                const name = PROPS[Math.floor(hash(k * 3 + side, n) * PROPS.length)];
+                const obj = this.templates[name].clone();
+                obj.position.set(x, 0, z);
+                obj.rotation.y = hash(x, z) * Math.PI * 2;
+                obj.userData.size = 0.85 + hash(z, x) * 0.3;
+                obj.userData.bornAt = motion ? now + 120 + i * 35 : -Infinity;
+                obj.userData.flicker = hash(i, n) * 10;
+                if (name === "Lantern") obj.children[0].material = obj.children[0].material.clone();
+                this.platform.add(obj);
+                this.props.push(obj);
+                i++;
+            }
+        }
+        this.#updateProps(now);
+    }
+
+    #flushLeaving() {
+        for (const p of this.leaving) this.platform.remove(p);
+        this.leaving = [];
+    }
+
+    #updateTiles(now) {
+        if (!this.tiles) return;
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const p = new THREE.Vector3();
+        const s = new THREE.Vector3(1, 1, 1);
+        const up = new THREE.Vector3(0, 1, 0);
+        let busy = false;
+        this.tileCells.forEach((c, i) => {
+            // 420 ms, montée depuis l'herbe : la dalle naît du sol, jamais de nulle part.
+            const t = Math.min(1, Math.max(0, (now - c.bornAt) / 420));
+            if (t < 1) busy = true;
+            const k = easeOut(t);
+            p.set(c.x, -0.35 * (1 - k) + (hash(c.x, c.z) - 0.5) * 0.03, c.z);
+            q.setFromAxisAngle(up, (hash(c.z, c.x) - 0.5) * 0.06);
+            s.setScalar(0.9 + 0.1 * k);
+            this.tiles.setMatrixAt(i, m.compose(p, q, s));
+        });
+        this.tiles.instanceMatrix.needsUpdate = true;
+        this.tilesBusy = busy;
+    }
+
+    #updateProps(now) {
+        for (const p of this.props) {
+            // Entrée : 380 ms ease-out, depuis 60 % de la taille (pas depuis zéro).
+            const t = Math.min(1, Math.max(0, (now - p.userData.bornAt) / 380));
+            p.visible = t > 0;
+            p.scale.setScalar(p.userData.size * (0.6 + 0.4 * easeOut(t)));
+        }
+        // Sortie plus rapide que l'entrée : 160 ms.
+        this.leaving = this.leaving.filter((p) => {
+            const t = Math.min(1, (now - p.leaveAt) / 160);
+            p.scale.setScalar(p.userData.size * (1 - 0.4 * t));
+            p.position.y = -0.3 * t * t;
+            if (t < 1) return true;
+            this.platform.remove(p);
+            return false;
+        });
     }
 
     // Le socle suit la taille de l'arène (animé dans update).
     setArena(size) {
+        const grew = this.arenaTarget != null && size > this.arenaTarget;
         this.arenaTarget = size;
+        this.#layout(size, grew);
     }
 
     setPhase(phase) {
@@ -151,13 +344,33 @@ export class Environment {
             this.arenaSize ??= this.size;
             this.arenaSize += (this.arenaTarget - this.arenaSize) * (1 - Math.exp(-dt * 3));
             const k = this.arenaSize / this.size;
-            this.platform.scale.set(k, 1, k);
-            this.platform.position.y = -this.arenaSize / 2 - 0.9;
+            this.platform.children[0].scale.set(k, 1, k);
+            this.runes.scale.setScalar(this.island ? k * 0.62 : k);
+            // Avec l'île, le cube repose juste au-dessus des dalles.
+            this.platform.position.y = -this.arenaSize / 2 - (this.island ? 0.12 : 0.9);
             this.godLight.position.y = this.platform.position.y - 1;
+            if (this.island) {
+                const w = (this.arenaSize / 2 + MARGIN) / (this.size / 2 + MARGIN);
+                this.island.scale.set(w, 1, w);
+            }
+        }
+        if (this.island) {
+            const now = performance.now();
+            if (this.tilesBusy) this.#updateTiles(now);
+            this.#updateProps(now);
+            for (const p of this.props) {
+                if (p.name !== "Lantern") continue;
+                const halo = p.children[0];
+                halo.material.opacity = 0.5 + 0.08 * Math.sin(time / 260 + p.userData.flicker);
+            }
         }
         this.sky.material.uniforms.uTime.value = time / 1000;
         this.runes.rotation.z += dt * 0.05;
         this.dust.rotation.y += dt * 0.015;
+        // Îlots : lente houle, chacun à son rythme (décoratif, jamais dans le champ de jeu).
+        this.islets.forEach((islet, i) => {
+            islet.position.y = islet.userData.baseY + Math.sin(time / 2200 + i * 1.7) * 0.35;
+        });
         this.godLight.color.copy(this.tint);
         this.runes.material.color.copy(this.tint);
         this.godLight.intensity = 40 + Math.sin(time / 700) * 10;

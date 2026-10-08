@@ -22,6 +22,7 @@ const MIME = {
     ".json": "application/json",
     ".png": "image/png",
     ".svg": "image/svg+xml",
+    ".glb": "model/gltf-binary",
 };
 
 function resolvePath(urlPath) {

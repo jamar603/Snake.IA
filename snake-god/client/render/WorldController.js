@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { AXES, add, inBounds, key, rotatingWallOffsets } from "/shared/grid.js";
+import { AXES, add, inBounds, key, rotatingWallCells, rotatingWallOffsets } from "/shared/grid.js";
 import { cellToWorld, vec } from "./coords.js";
+import { worldPieces } from "./assets.js";
 import { PHASE_COLORS } from "./Environment.js";
 import { circuitTextures, glowTexture, hazardTexture } from "./textures.js";
 
@@ -26,6 +27,22 @@ export class WorldController {
         this.#buildMaterials();
         this.setArena(7);
         this.#buildIntel();
+        // Cadre en pierre de Blender dès qu'il est chargé (sinon arêtes lumineuses simples).
+        worldPieces.then((pieces) => {
+            if (!pieces?.FrameBeam) return;
+            this.pieces = pieces;
+            pieces.FrameBeam.traverse((o) => {
+                if (o.material?.name === "FrameGlow") this.frameGlowMat = o.material;
+            });
+            // Veines discrètes : le bloom suffit à les faire briller sans éblouir.
+            if (this.frameGlowMat) this.frameGlowMat.emissiveIntensity = 0.7;
+            pieces.FrameCorner.traverse((o) => {
+                if (o.material?.name === "FrameGlow") o.material = this.frameGlowMat;
+            });
+            const scale = this.frame.scale.x;
+            this.#buildFrame(this.arenaSize);
+            this.frame.scale.setScalar(scale);
+        });
     }
 
     #buildMaterials() {
@@ -74,14 +91,22 @@ export class WorldController {
         this.edgeMat ??= new THREE.MeshBasicMaterial({ color: this.frameColor });
         const edgeGeo = new THREE.CylinderGeometry(0.035, 0.035, n, 8);
         const corners = [-half, half];
+        const stone = this.pieces;
+        // Arête : poutre de pierre (étirée entre deux coins) ou simple tube lumineux.
+        const edge = () => {
+            if (!stone) return new THREE.Mesh(edgeGeo, this.edgeMat);
+            const beam = stone.FrameBeam.clone();
+            beam.scale.set(1, n - 0.3, 1);
+            return beam;
+        };
         for (const a of corners) {
             for (const b of corners) {
-                const ex = new THREE.Mesh(edgeGeo, this.edgeMat);
+                const ex = edge();
                 ex.rotation.z = Math.PI / 2;
                 ex.position.set(0, a, b);
-                const ey = new THREE.Mesh(edgeGeo, this.edgeMat);
+                const ey = edge();
                 ey.position.set(a, 0, b);
-                const ez = new THREE.Mesh(edgeGeo, this.edgeMat);
+                const ez = edge();
                 ez.rotation.x = Math.PI / 2;
                 ez.position.set(a, b, 0);
                 frame.add(ex, ey, ez);
@@ -92,10 +117,10 @@ export class WorldController {
         for (const x of corners)
             for (const y of corners)
                 for (const z of corners) {
-                    const node = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), this.edgeMat);
+                    const node = stone ? stone.FrameCorner.clone() : new THREE.Mesh(new THREE.OctahedronGeometry(0.16), this.edgeMat);
                     node.position.set(x, y, z);
-                    const glow = new THREE.Sprite(this.glowMat(this.frameColor, 0.7));
-                    glow.scale.setScalar(1.3);
+                    const glow = new THREE.Sprite(this.glowMat(this.frameColor, stone ? 0.45 : 0.7));
+                    glow.scale.setScalar(stone ? 1 : 1.3);
                     glow.position.copy(node.position);
                     this.cornerSprites.push(glow);
                     frame.add(node, glow);
@@ -134,7 +159,7 @@ export class WorldController {
         // Sol vitré du cube (une seule face : invisible depuis dessous).
         const floor = new THREE.Mesh(
             new THREE.PlaneGeometry(n, n),
-            new THREE.MeshStandardMaterial({ color: 0x10132a, metalness: 0.6, roughness: 0.25, transparent: true, opacity: 0.6 })
+            new THREE.MeshStandardMaterial({ color: 0x10132a, metalness: 0.6, roughness: 0.25, transparent: true, opacity: 0.35 })
         );
         floor.rotation.x = -Math.PI / 2;
         floor.position.y = -half - 0.01;
@@ -272,12 +297,16 @@ export class WorldController {
                 this.walls.set(w.id, view);
             }
             view.data = w;
-            if (w.kind === "rotating") view.targetQuat.setFromAxisAngle(vec(AXES[w.axis]), w.turns * QUARTER);
+            if (w.kind === "rotating") {
+                view.targetQuat.setFromAxisAngle(vec(AXES[w.axis]), w.turns * QUARTER);
+                if (view.sweepTurns !== w.turns) this.#placeSweep(view, w);
+            }
         }
         for (const [id, view] of this.walls) {
             if (seen.has(id)) continue;
             this.root.remove(view.group);
             if (view.rod) this.root.remove(view.rod);
+            if (view.sweep) this.root.remove(view.sweep);
             this.walls.delete(id);
         }
     }
@@ -331,6 +360,10 @@ export class WorldController {
             this.root.add(rod);
             view.targetQuat.setFromAxisAngle(axisVec, w.turns * QUARTER);
             group.quaternion.copy(view.targetQuat);
+            // Avertissement : les cases du prochain quart de tour rougissent juste avant.
+            view.sweepMat = new THREE.MeshBasicMaterial({ color: 0xff4fe0, map: hazardTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+            view.sweep = new THREE.Group();
+            this.root.add(view.sweep);
         } else {
             // Monolithe d'obsidienne parcouru de circuits (mur du dieu).
             const mat = new THREE.MeshStandardMaterial({
@@ -358,8 +391,22 @@ export class WorldController {
         return view;
     }
 
+    // Cases que balaiera le prochain quart de tour (hors cases déjà occupées par la lame).
+    #placeSweep(view, w) {
+        view.sweepTurns = w.turns;
+        view.sweep.clear();
+        const now = new Set(w.cells.map(key));
+        for (const c of rotatingWallCells(w.pivot, w.axis, w.arm, w.turns + 1)) {
+            if (now.has(key(c))) continue;
+            const m = new THREE.Mesh(this.sweepGeo ??= new THREE.BoxGeometry(0.9, 0.9, 0.9), view.sweepMat);
+            cellToWorld(c, this.size, m.position);
+            view.sweep.add(m);
+        }
+    }
+
     // ---------- Pièges et nourriture ----------
     #createTrap() {
+        if (this.pieces?.Trap) return this.#createStoneTrap();
         const g = new THREE.Group();
         g.add(new THREE.Mesh(this.geo.mineBody, this.mats.mine));
         const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [1, 1, 1], [-1, -1, 1], [1, -1, -1], [-1, 1, -1]];
@@ -376,6 +423,40 @@ export class WorldController {
         g.add(core, glow);
         g.userData.glow = glow;
         return g;
+    }
+
+    // Mine runique (Blender) : rune rouge propre à chaque piège pour réagir à la proximité.
+    #createStoneTrap() {
+        const g = new THREE.Group();
+        const mine = this.pieces.Trap.clone();
+        let rune = null;
+        mine.traverse((o) => {
+            if (o.material?.name === "TrapGlow") {
+                o.material = o.material.clone();
+                rune = o.material;
+            }
+        });
+        const glow = new THREE.Sprite(this.glowMat(0xff2040, 0.45));
+        glow.scale.setScalar(1.1);
+        g.add(mine, glow);
+        g.userData.glow = glow;
+        g.userData.mine = mine;
+        g.userData.rune = rune;
+        return g;
+    }
+
+    // Le Snake du joueur : les pièges proches s'éveillent (lisibilité du danger).
+    setFocus(position) {
+        this.focus = position;
+    }
+
+    // Piège déclenché : on le retire tout de suite (l'explosion prend le relais).
+    triggerTrap(cell) {
+        const k = key(cell) + "trap";
+        const g = this.traps.get(k);
+        if (!g) return;
+        this.root.remove(g);
+        this.traps.delete(k);
     }
 
     #createFood(item) {
@@ -544,16 +625,22 @@ export class WorldController {
         }
         this.#updateConstruction(dt, time);
         this.edgeMat.color.copy(this.frameColor);
+        this.frameGlowMat?.emissive.copy(this.frameColor);
         for (const s of this.cornerSprites) s.material.color.copy(this.frameColor);
 
         for (const view of this.walls.values()) {
             const g = view.group;
+            // Apparition : 320 ms depuis 60 % avec un léger dépassement (jamais depuis zéro).
             const grow = Math.min(1, (time - view.bornAt) / 320);
-            g.scale.setScalar(easeOutBack(grow));
+            g.scale.setScalar(0.6 + 0.4 * easeOutBack(grow));
             if (view.data.kind === "rotating") {
                 g.quaternion.rotateTowards(view.targetQuat, dt * 6);
-                view.rod.scale.setScalar(Math.max(0.01, grow));
+                view.rod.scale.setScalar(0.6 + 0.4 * grow);
                 view.ring.rotation.z += dt * 3;
+                // 700 ms avant le quart de tour : les cases balayées s'allument de plus en plus vite.
+                const left = view.data.nextRotateAt != null ? view.data.nextRotateAt - gameNow : Infinity;
+                const warn = left < 700 ? 1 - Math.max(0, left) / 700 : 0;
+                view.sweepMat.opacity = warn * (0.25 + 0.25 * Math.abs(Math.sin(time / (90 - warn * 50))));
             }
             const left = view.data.expiresAt != null ? view.data.expiresAt - gameNow : Infinity;
             let opacity = left < 3000 ? 0.4 + 0.45 * Math.abs(Math.sin(time / 110)) : 1;
@@ -569,9 +656,21 @@ export class WorldController {
         }
         for (const g of this.traps.values()) {
             const t = time / 1000 + g.userData.phase;
-            g.rotation.set(t * 0.8, t * 1.3, 0);
-            g.scale.setScalar(Math.min(1, (time - g.userData.bornAt) / 200) * (1 + 0.08 * Math.sin(t * 7)));
-            g.userData.glow.material.opacity = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(t * 7));
+            // Éveil : 0 loin du Snake du joueur, 1 à une case. Le piège tourne plus vite,
+            // ses pointes sortent et sa rune brûle : on le voit venir.
+            const dist = this.focus ? g.position.distanceTo(this.focus) : Infinity;
+            const target = Math.max(0, Math.min(1, (3.5 - dist) / 2.5));
+            g.userData.alert = (g.userData.alert ?? 0) + (target - (g.userData.alert ?? 0)) * Math.min(1, dt * 8);
+            const alert = g.userData.alert;
+            g.userData.spin = (g.userData.spin ?? 0) + dt * (0.8 + alert * 4);
+            g.rotation.set(g.userData.spin * 0.6, g.userData.spin, 0);
+            // Apparition : 200 ms ease-out depuis 70 % (jamais depuis zéro).
+            const born = Math.min(1, (time - g.userData.bornAt) / 200);
+            const enter = 0.7 + 0.3 * (1 - Math.pow(1 - born, 3));
+            const beat = 1 + (0.05 + alert * 0.1) * Math.sin(t * (6 + alert * 10));
+            g.scale.setScalar(enter * beat * (1 + alert * 0.15));
+            g.userData.glow.material.opacity = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(t * 7)) + alert * 0.4;
+            if (g.userData.rune) g.userData.rune.emissiveIntensity = 3 + alert * 6;
         }
         for (const g of this.food.values()) {
             const t = time / 1000 + g.userData.phase;
@@ -604,6 +703,7 @@ export class WorldController {
         for (const view of this.walls.values()) {
             this.root.remove(view.group);
             if (view.rod) this.root.remove(view.rod);
+            if (view.sweep) this.root.remove(view.sweep);
         }
         for (const m of [...this.traps.values(), ...this.food.values()]) this.root.remove(m);
         for (const v of this.zones.values()) this.root.remove(v.group);

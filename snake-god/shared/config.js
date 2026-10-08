@@ -2,11 +2,11 @@
 // Toute la logique de jeu vit sur le serveur ; le client lit ces valeurs
 // uniquement pour l'affichage (coûts, couleurs, taille du cube...).
 
-// Le monde grandit pendant la partie : 5³ -> 7³ -> 9³ -> 11³.
+// Le monde grandit pendant la partie : 7³ -> 9³ -> 11³ -> 13³ (assez de place dès le départ).
 // GRID_SIZE = taille maximale = espace de coordonnées (l'arène y est centrée).
 export const WORLD = {
-    maxSize: 11,
-    sizes: [5, 7, 9, 11],
+    maxSize: 13,
+    sizes: [7, 9, 11, 13],
     // Une expansion se déclenche dès qu'UN critère est atteint pour l'étape suivante,
     // mais jamais avant `minProgress` : la montée en puissance reste progressive.
     minProgress: [0.1, 0.3, 0.52], // fraction du temps de partie
@@ -14,16 +14,24 @@ export const WORLD = {
     lengthThresholds: [16, 36, 64], // longueur cumulée des Snakes vivants
     densityThreshold: 0.15, // (murs + corps) / volume de l'arène
     warnMs: 2800, // annonce -> fin de la construction
-    foodBySize: { 5: 4, 7: 5, 9: 6, 11: 8 },
-    pillarsBySize: { 5: 1, 7: 2, 9: 2, 11: 3 }, // piliers ajoutés à chaque taille
+    foodBySize: { 7: 6, 9: 7, 11: 8, 13: 10 },
+    pillarsBySize: { 7: 3, 9: 2, 11: 3, 13: 3 }, // piliers ajoutés à chaque taille
 };
 export const GRID_SIZE = WORLD.maxSize;
 
-export const MATCH_SECONDS = 180;
+// Durée d'une partie (choisie dans le salon ou en solo). 0 = illimitée : la partie dure
+// jusqu'à ce que le dieu élimine les Snakes, ou qu'un Snake atteigne UNLIMITED.winLength.
+export const MATCH_SECONDS = 90;
+export const MATCH_DURATIONS = [90, 120, 150, 180, 0];
+export const UNLIMITED = {
+    pacingSeconds: 180, // phases et expansions comme une partie de 3 min, puis Chaos jusqu'au bout
+    winLength: 150, // longueur qui fait gagner les Snakes
+};
+export const durationLabel = (s) => (s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "Illimitée");
 export const COUNTDOWN_SECONDS = 3;
 
 export const SNAKE = {
-    maxHp: 3,
+    maxHp: 2,
     startLength: 3,
     invulnerableMs: 1800, // après un coup : pas de nouveaux dégâts
     maxQueuedTurns: 2,
@@ -31,6 +39,35 @@ export const SNAKE = {
     lengthPoints: 5, // par segment à la fin de la partie
     survivalBonus: 100,
 };
+
+// Compétences des Snakes : une touche chacune, puis un temps de recharge.
+export const SKILLS = {
+    sprint: {
+        label: "Sprint",
+        keys: [" ", "1"],
+        keyLabel: "Espace",
+        cooldownMs: 12000,
+        durationMs: 1500,
+        description: "Avance de 2 cases par tick pendant 1,5 s.",
+    },
+    shield: {
+        label: "Bouclier",
+        keys: ["e", "2"],
+        keyLabel: "E",
+        cooldownMs: 20000,
+        durationMs: 3000,
+        description: "Bloque le prochain dégât pendant 3 s.",
+    },
+    phase: {
+        label: "Phase",
+        keys: ["f", "3"],
+        keyLabel: "F",
+        cooldownMs: 18000,
+        durationMs: 1000,
+        description: "Traverse murs, pièges et corps pendant 1 s (pas les bords).",
+    },
+};
+export const SKILL_IDS = Object.keys(SKILLS);
 
 export const FOOD_COUNT = 6;
 
@@ -50,7 +87,7 @@ export const POWERS = {
         cost: 15,
         cooldownMs: 1000,
         phase: 1,
-        maxActive: 8,
+        maxActive: 12,
         description: "Une cellule piégée : -1 PV au Snake qui passe dessus.",
     },
     wall: {
@@ -59,7 +96,7 @@ export const POWERS = {
         cost: 20,
         cooldownMs: 2500,
         phase: 1,
-        maxActive: 6,
+        maxActive: 9,
         lifetimeMs: 20000,
         length: 3,
         description: "Un mur de 3 cellules qui dure 20 s.",
@@ -70,7 +107,7 @@ export const POWERS = {
         cost: 45,
         cooldownMs: 8000,
         phase: 2,
-        maxActive: 3,
+        maxActive: 6,
         arm: 2, // cellules de chaque côté du pivot
         rotateEveryMs: 2200,
         description: "Une barre de 5 cellules qui pivote de 90° autour d'un axe.",
@@ -95,12 +132,12 @@ export const POWERS = {
     dangerZone: {
         label: "Zone dangereuse",
         key: "6",
-        cost: 35,
+        cost: 30,
         cooldownMs: 6000,
         phase: 3,
         maxActive: 2,
         radius: 1, // 3 × 3 cellules
-        warnMs: 1200,
+        warnMs: 1000,
         durationMs: 6000,
         description: "Une dalle de 3 × 3 qui brûle (-1 PV) après un court avertissement.",
     },
@@ -122,7 +159,7 @@ export const WORLD_EVENTS = {
     intervalMs: [16000, 24000],
     goldenFruit: { label: "Fruit doré", points: 50, growth: 3, heal: 1, lifetimeMs: 15000 },
     foodRain: { label: "Pluie de nourriture", count: 5 },
-    meteorShower: { label: "Pluie de météores", count: 6, warnMs: 1500, durationMs: 700 },
+    meteorShower: { label: "Pluie de météores", count: 10, warnMs: 1500, durationMs: 700 },
 };
 export const UPCOMING_FOOD_PREVIEW = 3; // prochaines apparitions de nourriture visibles par le dieu
 

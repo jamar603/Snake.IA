@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { POWERS, POWER_IDS } from "/shared/config.js";
 import {
+    AXES,
     chebyshev,
     dangerZoneCells,
     inBounds,
@@ -9,7 +10,9 @@ import {
     rotatingWallFits,
     straightWallCells,
 } from "/shared/grid.js";
-import { cellToWorld, worldToCell } from "../render/coords.js";
+import { worldPieces } from "../render/assets.js";
+import { cellToWorld, vec, worldToCell } from "../render/coords.js";
+import { hazardTexture } from "../render/textures.js";
 
 const AXIS_ORDER = ["y", "x", "z"];
 const VALID = 0xb36bff;
@@ -39,6 +42,17 @@ export class GodController extends EventTarget {
         this.#buildLayer();
         this.#buildGhost();
         this.#bindInput();
+        this.hint = { ok: true, reason: "" };
+        // Aperçu du piège : la vraie mine, en fantôme.
+        worldPieces.then((pieces) => {
+            if (!pieces?.Trap) return;
+            this.trapGhost = pieces.Trap.clone();
+            this.trapGhost.traverse((o) => {
+                if (o.isMesh) o.material = this.ghostMat;
+            });
+            this.trapGhost.visible = false;
+            this.ghost.add(this.trapGhost);
+        });
     }
 
     #buildLayer() {
@@ -78,6 +92,19 @@ export class GodController extends EventTarget {
             this.ghost.add(m);
             return m;
         });
+        // Zone dangereuse : dalle hachurée (ce qui brûlera), pas des cubes.
+        this.zoneMat = new THREE.MeshBasicMaterial({ color: VALID, map: hazardTexture(), transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+        this.zoneCells = Array.from({ length: 9 }, () => {
+            const m = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 0.96), this.zoneMat);
+            this.ghost.add(m);
+            return m;
+        });
+        // Mur rotatif : cercle balayé par la lame, dans son plan de rotation.
+        this.sweepRing = new THREE.Mesh(
+            new THREE.RingGeometry(0.4, POWERS.rotatingWall.arm + 0.5, 48),
+            new THREE.MeshBasicMaterial({ color: VALID, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false })
+        );
+        this.ghost.add(this.sweepRing);
         // Ligne verticale vers le sol : situe la profondeur du curseur.
         const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
         this.dropLine = new THREE.Line(lineGeo, new THREE.LineDashedMaterial({ color: VALID, dashSize: 0.15, gapSize: 0.1 }));
@@ -208,40 +235,68 @@ export class GodController extends EventTarget {
     }
 
     // Même règles que le serveur, pour colorer l'aperçu (le serveur reste l'arbitre).
-    #isValid(cells) {
+    // Renvoie la raison du refus, ou "" si le pouvoir peut partir.
+    #whyInvalid(cells) {
         const s = this.state;
-        if (!s || !cells.length) return false;
+        if (!s || !cells.length) return "Vise une case du cube";
         const god = s.god;
         const info = god.powers[this.power];
-        if (!info.unlocked || info.cooldownLeft > 0 || god.energy < POWERS[this.power].cost) return false;
+        const p = POWERS[this.power];
+        if (!info.unlocked) return `Débloqué en phase ${p.phase}`;
+        if (info.cooldownLeft > 0) return `Recharge : ${(info.cooldownLeft / 1000).toFixed(1)} s`;
+        if (god.energy < p.cost) return `Énergie insuffisante (${Math.floor(god.energy)} / ${p.cost})`;
         if (this.power === "rotatingWall" && !rotatingWallFits(this.hoverCell, this.axis, POWERS.rotatingWall.arm, this.arena))
-            return false;
+            return "La lame dépasse du cube : change d'axe (R) ou rapproche-toi du centre";
         const wallCells = new Set();
         for (const w of s.walls) for (const c of w.cells) wallCells.add(key(c));
-        if (this.power === "demolish") return wallCells.has(key(cells[0]));
-        if (this.power === "dangerZone") return true;
+        if (this.power === "demolish") return wallCells.has(key(cells[0])) ? "" : "Vise un mur ou un pilier";
+        if (this.power === "dangerZone") return "";
         const taken = new Set(wallCells);
         for (const c of s.traps) taken.add(key(c));
         for (const f of s.food) taken.add(key(f.cell));
         for (const sn of s.snakes) for (const c of sn.body) taken.add(key(c));
         const heads = s.snakes.filter((sn) => sn.alive && sn.body.length).map((sn) => sn.body[0]);
-        return cells.every(
-            (c) => inBounds(c, this.arena) && !taken.has(key(c)) && heads.every((h) => chebyshev(h, c) > 1)
-        );
+        if (!cells.every((c) => inBounds(c, this.arena))) return "Dépasse du cube";
+        if (cells.some((c) => taken.has(key(c)))) return "Case occupée";
+        if (cells.some((c) => heads.some((h) => chebyshev(h, c) <= 1))) return "Trop près d'un Snake";
+        return "";
     }
 
     #refreshGhost() {
         const cells = this.previewCells();
         this.ghost.visible = this.enabled && cells.length > 0;
         if (!this.ghost.visible) return;
-        const color = this.#isValid(cells) ? VALID : INVALID;
-        this.ghostMat.color.setHex(color);
-        this.ghostEdgeMat.color.setHex(color);
-        this.dropLine.material.color.setHex(color);
+        const reason = this.#whyInvalid(cells);
+        if (reason !== this.hint.reason) {
+            this.hint = { ok: !reason, reason };
+            this.#changed();
+        }
+        const color = reason ? INVALID : VALID;
+        for (const mat of [this.ghostMat, this.ghostEdgeMat, this.dropLine.material, this.zoneMat, this.sweepRing.material]) mat.color.setHex(color);
+        // Forme propre à chaque pouvoir : mine, dalle hachurée, cubes (+ cercle balayé).
+        const trap = this.power === "trap" && this.trapGhost;
+        const zone = this.power === "dangerZone";
+        if (this.trapGhost) {
+            this.trapGhost.visible = !!trap;
+            if (trap) cellToWorld(cells[0], this.size, this.trapGhost.position);
+        }
         this.ghostCells.forEach((m, i) => {
-            m.visible = i < cells.length && inBounds(cells[i], this.arena);
+            m.visible = !trap && !zone && i < cells.length && inBounds(cells[i], this.arena);
             if (m.visible) cellToWorld(cells[i], this.size, m.position);
         });
+        this.zoneCells.forEach((m, i) => {
+            m.visible = zone && i < cells.length && inBounds(cells[i], this.arena);
+            if (!m.visible) return;
+            cellToWorld(cells[i], this.size, m.position);
+            const n = vec(AXES[this.axis]);
+            m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+            m.position.addScaledVector(n, -0.46); // posée sur la face de la cellule
+        });
+        this.sweepRing.visible = this.power === "rotatingWall";
+        if (this.sweepRing.visible) {
+            cellToWorld(this.hoverCell, this.size, this.sweepRing.position);
+            this.sweepRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), vec(AXES[this.axis]));
+        }
         const top = cellToWorld(this.hoverCell, this.size);
         const pos = this.dropLine.geometry.attributes.position;
         pos.setXYZ(0, top.x, top.y - 0.5, top.z);

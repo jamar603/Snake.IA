@@ -1,9 +1,61 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { SKINS } from "/shared/cosmetics.js";
-import { glowTexture, snakeSkinTextures } from "./textures.js";
+import { glowTexture, scaleNormalTexture, snakeSkinTextures } from "./textures.js";
 
 const MAX_RINGS = 700;
-const RADIAL = 16;
+const RADIAL = 24;
+const UV_PER_UNIT = 0.9; // u de la peau par unité de longueur (corps et crâne)
+const easeOut = (t) => 1 - Math.pow(1 - t, 4);
+
+// Bulle du Bouclier : bord lumineux (Fresnel) et alvéoles qui défilent, centre transparent.
+const SHIELD_VERT = /* glsl */ `
+varying vec3 vNormal;
+varying vec3 vView;
+varying vec3 vPos;
+void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vView = normalize(-mv.xyz);
+    vPos = position;
+    gl_Position = projectionMatrix * mv;
+}`;
+const SHIELD_FRAG = /* glsl */ `
+uniform vec3 uColor;
+uniform float uTime;
+uniform float uOpacity;
+varying vec3 vNormal;
+varying vec3 vView;
+varying vec3 vPos;
+void main() {
+    float rim = pow(1.0 - abs(dot(vNormal, vView)), 2.5);
+    vec2 h = vec2(atan(vPos.z, vPos.x) * 4.0, vPos.y * 9.0 + uTime * 1.5);
+    vec2 g = abs(fract(h) - 0.5);
+    float cell = smoothstep(0.42, 0.5, max(g.x, g.y));
+    float a = (rim * 0.9 + cell * 0.25) * uOpacity;
+    gl_FragColor = vec4(uColor * (0.6 + rim), a);
+}`;
+
+// Crâne sculpté dans Blender (blender/build_snake.py), chargé une fois pour tous les Snakes.
+// UV calculées ici comme pour le corps : u le long du corps, v autour (0 et 1 = dos).
+let skullGeometry = null;
+const skullReady = new GLTFLoader()
+    .loadAsync("/assets/snake.glb")
+    .then((gltf) => {
+        let geo = null;
+        gltf.scene.traverse((o) => o.isMesh && (geo ??= o.geometry));
+        const pos = geo.attributes.position;
+        const uv = new Float32Array(pos.count * 2);
+        for (let i = 0; i < pos.count; i++) {
+            const a = Math.atan2(pos.getX(i), pos.getY(i));
+            uv[i * 2] = -pos.getZ(i) * UV_PER_UNIT;
+            uv[i * 2 + 1] = 1 - (a < 0 ? a + Math.PI * 2 : a) / (Math.PI * 2);
+        }
+        geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+        skullGeometry = geo;
+        return geo;
+    })
+    .catch((err) => console.warn("Crâne introuvable, tête simple utilisée :", err));
 const SUBDIV = 6; // échantillons par case de grille
 const FIN_MAX = 90;
 
@@ -23,6 +75,9 @@ export class SnakeModel {
         this.blinkAt = 1 + Math.random() * 3;
         this.tongueAt = 2 + Math.random() * 3;
         this.opacity = 1;
+        this.skills = { sprint: false, shield: false, phase: false, shieldMs: 0 };
+        this.shieldT = 0; // 0 -> 1 : apparition de la bulle
+        this.phaseT = 0;
         this.samples = [];
         this.length = 0;
 
@@ -53,7 +108,16 @@ export class SnakeModel {
         geo.setAttribute("uv", new THREE.BufferAttribute(this.uvArr, 2).setUsage(THREE.DynamicDrawUsage));
         geo.setIndex(index);
         geo.setDrawRange(0, 0);
-        this.bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.15, emissive: 0xffffff });
+        // Écailles en relief (normal map) et vernis léger : la peau accroche la lumière.
+        this.bodyMat = new THREE.MeshPhysicalMaterial({
+            roughness: 0.45,
+            metalness: 0.1,
+            emissive: 0xffffff,
+            normalMap: scaleNormalTexture(),
+            normalScale: new THREE.Vector2(0.9, 0.9),
+            clearcoat: 0.35,
+            clearcoatRoughness: 0.35,
+        });
         this.body = new THREE.Mesh(geo, this.bodyMat);
         this.body.frustumCulled = false;
         this.body.castShadow = true;
@@ -74,6 +138,7 @@ export class SnakeModel {
         snout.scale.set(0.3, 0.2, 0.3);
         snout.position.set(0, 0.0, 0.36);
         head.add(skull, snout);
+        this.simpleSkull = [skull, snout];
 
         // Mâchoire inférieure articulée.
         this.jaw = new THREE.Group();
@@ -135,6 +200,7 @@ export class SnakeModel {
             brow.position.set(side * 0.24, 0.22, 0.24);
             brow.rotation.z = side * -0.35;
             head.add(eye, brow);
+            this.simpleSkull.push(brow);
             this.eyes.push(eye);
         }
         // Narines
@@ -147,6 +213,16 @@ export class SnakeModel {
         this.accessory = new THREE.Group();
         head.add(this.accessory);
         this.group.add(head);
+        if (skullGeometry) this.#useSculptedSkull(skullGeometry);
+        else skullReady.then((geo) => geo && this.#useSculptedSkull(geo));
+    }
+
+    // Remplace les sphères (crâne, museau, arcades) par le crâne de Blender.
+    #useSculptedSkull(geo) {
+        for (const part of this.simpleSkull) part.visible = false;
+        const skull = new THREE.Mesh(geo, this.headMat);
+        skull.castShadow = true;
+        this.head.add(skull);
     }
 
     #buildEvolutionParts() {
@@ -186,6 +262,32 @@ export class SnakeModel {
         this.halo.position.y = 0.55;
         this.head.add(this.halo);
         this.group.add(this.aura);
+
+        // Bouclier : bulle autour de la tête.
+        this.shield = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(0.72, 3),
+            new THREE.ShaderMaterial({
+                vertexShader: SHIELD_VERT,
+                fragmentShader: SHIELD_FRAG,
+                uniforms: { uColor: { value: new THREE.Color() }, uTime: { value: 0 }, uOpacity: { value: 0 } },
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+            })
+        );
+        this.shield.visible = false;
+        this.head.add(this.shield);
+    }
+
+    // Compétences actives (lues dans l'état du serveur).
+    setSkills(skills) {
+        this.skills = skills;
+    }
+
+    // Bouclier brisé : la bulle disparaît tout de suite (les éclats sont dans Effects).
+    breakShield() {
+        this.shieldT = 0;
+        this.shield.visible = false;
     }
 
     setCosmetics(cosmetics) {
@@ -206,6 +308,7 @@ export class SnakeModel {
         this.spikeMat.color.set(skin.glow);
         this.spikeMat.emissive.set(skin.glow);
         this.aura.material.color.set(skin.glow);
+        this.shield.material.uniforms.uColor.value.set(skin.glow);
         this.halo.material.color.set(skin.glow);
         this.glowColor = new THREE.Color(skin.glow);
         this.#buildAccessory(cosmetics.accessory);
@@ -375,7 +478,11 @@ export class SnakeModel {
 
             const s = L[i] / total;
             let r = R * (1 - 0.82 * smoothstep(0.35, 1, s)) * (0.88 + 0.12 * smoothstep(0, 0.06, s));
-            for (const bulge of this.bulges) r *= 1 + bulge.amp * Math.exp(-((L[i] - bulge.dist) ** 2) / 0.12);
+            // Bosses de digestion : additionnées et plafonnées (plusieurs repas rapprochés,
+            // surtout en sprint, ne doivent pas faire gonfler le corps démesurément).
+            let swell = 0;
+            for (const bulge of this.bulges) swell += bulge.amp * Math.exp(-((L[i] - bulge.dist) ** 2) / 0.12);
+            r *= 1 + Math.min(0.6, swell);
             r = Math.max(r, 0.03);
 
             // Ondulation latérale (nulle près de la tête pour garder la lisibilité).
@@ -393,7 +500,7 @@ export class SnakeModel {
                 this.nrmArr[v * 3] = dir.x;
                 this.nrmArr[v * 3 + 1] = dir.y;
                 this.nrmArr[v * 3 + 2] = dir.z;
-                this.uvArr[v * 2] = L[i] * 0.9;
+                this.uvArr[v * 2] = L[i] * UV_PER_UNIT;
                 this.uvArr[v * 2 + 1] = 1 - j / RADIAL;
             }
 
@@ -472,8 +579,23 @@ export class SnakeModel {
         this.bodyMat.emissive.copy(this.glowColor).lerp(new THREE.Color(0xff1030), hurt);
         if (hurt > 0) this.bodyMat.emissiveIntensity += hurt * 2;
 
-        // Transparence (invulnérabilité, peau Spectre).
-        const opacity = this.opacity * this.baseOpacity;
+        // Bouclier : la bulle gonfle vite (ease-out), clignote juste avant de s'éteindre.
+        const sk = this.skills;
+        this.shieldT = sk.shield ? Math.min(1, this.shieldT + dt / 0.18) : Math.max(0, this.shieldT - dt / 0.12);
+        this.shield.visible = this.shieldT > 0;
+        if (this.shield.visible) {
+            const u = this.shield.material.uniforms;
+            u.uTime.value = this.time;
+            const ending = sk.shield && sk.shieldMs < 600 ? 0.55 + 0.45 * Math.sin(this.time * 40) : 1;
+            u.uOpacity.value = this.shieldT * ending;
+            this.shield.scale.setScalar(0.85 + 0.15 * easeOut(this.shieldT));
+        }
+        // Phase : le corps devient un fantôme lumineux.
+        this.phaseT += ((sk.phase ? 1 : 0) - this.phaseT) * Math.min(1, dt * 18);
+        if (this.phaseT > 0.01) this.bodyMat.emissiveIntensity += this.phaseT * (1.2 + 0.4 * Math.sin(this.time * 30));
+
+        // Transparence (invulnérabilité, phase, peau Spectre).
+        const opacity = this.opacity * this.baseOpacity * (1 - 0.6 * this.phaseT);
         const transparent = opacity < 0.999;
         for (const mat of [this.bodyMat, this.jawMat, this.eyeMat]) {
             mat.opacity = opacity;

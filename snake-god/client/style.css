@@ -544,6 +544,61 @@ input[type="range"] { accent-color: var(--god); width: 200px; }
 #evo-fill { height: 100%; width: 0; background: linear-gradient(90deg, #ffb84d, var(--gold)); box-shadow: 0 0 10px var(--gold); transition: width 0.3s; }
 .snake-help { font-size: 14px; color: var(--muted); }
 
+/* Compétences du Snake : recharge en cadran, état actif lumineux. */
+@property --cd { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --active { syntax: "<number>"; inherits: false; initial-value: 0; }
+.skills { display: flex; justify-content: center; gap: 10px; margin-bottom: 4px; pointer-events: auto; }
+.skill {
+    --c: var(--snake1);
+    position: relative;
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    border: 2px solid var(--line-strong);
+    background: var(--panel-solid);
+    color: var(--c);
+    overflow: hidden;
+    transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), border-color 120ms ease;
+}
+.skill svg { width: 28px; height: 28px; filter: drop-shadow(0 0 6px currentColor); }
+.skill:active { transform: scale(0.95); }
+.skill .s-key { position: absolute; top: 3px; left: 6px; font-family: var(--display); font-size: 9px; color: var(--muted); }
+.skill .s-name { position: absolute; bottom: 3px; font-size: 11px; font-weight: 700; color: var(--text); }
+/* Cadran de recharge : se vide en sens horaire (mouvement constant : linéaire). */
+.skill::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: conic-gradient(rgba(5, 4, 12, 0.72) calc(var(--cd) * 1turn), transparent 0);
+    transition: --cd 260ms linear;
+    pointer-events: none;
+}
+/* Durée restante pendant l'effet : barre qui se vide en bas. */
+.skill::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: calc(var(--active) * 100%);
+    background: var(--c);
+    box-shadow: 0 0 8px var(--c);
+    transition: --active 260ms linear;
+}
+.skill.cooling svg { opacity: 0.45; }
+.skill.active { border-color: var(--c); box-shadow: 0 0 22px color-mix(in srgb, var(--c) 60%, transparent); }
+.skill.just-ready { animation: skill-ready 260ms cubic-bezier(0.23, 1, 0.32, 1); }
+@keyframes skill-ready {
+    0% { transform: scale(0.94); }
+    60% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .skill.just-ready { animation: none; }
+}
+
 /* Panneau du dieu */
 .god-panel {
     position: absolute;
@@ -590,6 +645,9 @@ input[type="range"] { accent-color: var(--god); width: 200px; }
 .god-tools { display: flex; gap: 18px; font-size: 14px; color: var(--muted); }
 .god-tools strong { color: var(--text); }
 .god-tools .hint { margin-left: auto; }
+.god-tools { flex-wrap: wrap; align-items: center; }
+.god-hint { color: var(--text); transition: color 120ms ease; }
+.god-hint.bad { color: var(--danger); }
 
 /* Vision divine (information exclusive du dieu) */
 .intel {
@@ -689,3 +747,64 @@ input[type="range"] { accent-color: var(--god); width: 200px; }
     input[type="range"] { width: 130px; }
     .god-tools .hint { display: none; }
 }
+
+/* Durée de la partie (solo et salon) */
+.duration-pick { display: grid; gap: 6px; margin-bottom: 16px; font-size: 15px; color: var(--muted); }
+.duration-seg { flex-wrap: wrap; width: fit-content; }
+.duration-seg button { transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.duration-seg button:active { transform: scale(0.96); }
+.duration-seg button:disabled { cursor: default; }
+.duration-seg button:disabled:not(.active) { opacity: 0.45; }
+
+/* Bouton Quitter (en jeu) */
+.quit-btn {
+    position: absolute;
+    left: 18px;
+    bottom: 44px;
+    pointer-events: auto;
+    padding: 7px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel-solid);
+    color: var(--muted);
+    font-weight: 700;
+    transition: color 120ms ease, border-color 120ms ease, transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+    .quit-btn:hover { color: var(--text); border-color: var(--danger); }
+}
+.quit-btn:active { transform: scale(0.96); }
+
+/* Boîte de confirmation : entrée 200 ms ease-out depuis 96 %, sortie plus rapide.
+   (classe .closed et pas .hidden : .hidden coupe l'affichage et donc la transition) */
+.dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    background: rgba(4, 3, 10, 0.55);
+    opacity: 1;
+    transition: opacity 200ms ease-out;
+}
+.dialog {
+    width: min(380px, calc(100% - 32px));
+    padding: 22px;
+    border-radius: 16px;
+    background: var(--panel-solid);
+    border: 1px solid var(--line-strong);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    transform: scale(1);
+    transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dialog h3 { margin: 0 0 6px; font-family: var(--display); font-size: 18px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.dialog-backdrop.closed { opacity: 0; pointer-events: none; transition-duration: 140ms; }
+.dialog-backdrop.closed .dialog { transform: scale(0.96); transition-duration: 140ms; }
+.cta.danger { background: linear-gradient(135deg, #ff3b5c, #c4173a); }
+@media (prefers-reduced-motion: reduce) {
+    .dialog { transition: none; }
+}
+
+/* Partie illimitée : temps écoulé + objectif */
+.timer.unlimited::before { content: "∞ "; color: var(--muted); font-size: 0.7em; }

@@ -2,6 +2,7 @@ import { SNAKE } from "../shared/config.js";
 import { add, cross, neg } from "../shared/grid.js";
 import { SnakeGrowth } from "./SnakeGrowth.js";
 import { SnakeHealth } from "./SnakeHealth.js";
+import { SnakeSkills } from "./SnakeSkills.js";
 
 // Un Snake sur la grille 3D. Les virages sont relatifs à la tête :
 // gauche/droite tournent autour de `up`, haut/bas font basculer le nez.
@@ -15,6 +16,7 @@ export class SnakeController {
         this.turnQueue = [];
         this.health = new SnakeHealth(SNAKE.maxHp, SNAKE.invulnerableMs);
         this.growth = new SnakeGrowth();
+        this.skills = new SnakeSkills();
         this.alive = true;
         this.score = 0;
         this.diedAt = null; // temps de jeu (ms) de l'élimination
@@ -96,6 +98,7 @@ export class SnakeController {
             score: this.score,
             length: this.length,
             cosmetics: this.cosmetics,
+            skills: this.skills.snapshot(now),
         };
     }
 }

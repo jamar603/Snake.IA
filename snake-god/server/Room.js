@@ -1,4 +1,4 @@
-import { ROLE_INFO, ROLES, SNAKE_ROLES } from "../shared/config.js";
+import { MATCH_DURATIONS, MATCH_SECONDS, ROLE_INFO, ROLES, SNAKE_ROLES } from "../shared/config.js";
 import { C2S, MATCH_STATUS, S2C, TURNS } from "../shared/protocol.js";
 import { GameManager } from "./GameManager.js";
 
@@ -10,6 +10,7 @@ export class Room {
         this.name = name;
         this.isPrivate = isPrivate;
         this.game = new GameManager(gameOptions);
+        this.duration = gameOptions.matchSeconds ?? MATCH_SECONDS; // secondes, 0 = illimitée
         this.players = new Set();
         this.hostId = null;
         this.timer = null;
@@ -75,12 +76,19 @@ export class Room {
                 player.role = role;
                 return this.broadcastRoom();
             }
+            case C2S.SET_DURATION:
+                if (!idle || player.id !== this.hostId) return;
+                if (!this.setDuration(msg.seconds)) return;
+                return this.broadcastRoom();
             case C2S.START:
                 if (!idle) return;
                 if (player.id !== this.hostId) return this.#notice(player, "Seul l'hôte peut lancer la partie.");
                 return this.start();
             case C2S.TURN:
                 if (SNAKE_ROLES.includes(player.role) && TURNS.includes(msg.turn)) this.game.handleTurn(player.role, msg.turn);
+                return;
+            case C2S.SKILL:
+                if (SNAKE_ROLES.includes(player.role)) this.game.handleSkill(player.role, msg.skill);
                 return;
             case C2S.POWER: {
                 if (player.role !== "god") return;
@@ -95,8 +103,17 @@ export class Room {
         }
     }
 
+    // Renvoie true si la durée fait partie des choix proposés.
+    setDuration(seconds) {
+        const s = Number(seconds);
+        if (!MATCH_DURATIONS.includes(s)) return false;
+        this.duration = s;
+        return true;
+    }
+
     // Les rôles libres (ou dont le joueur est absent) sont joués par l'IA.
     start() {
+        this.game.setDuration(this.duration);
         const roster = {};
         for (const role of ROLES) roster[role] = { name: `IA ${ROLE_INFO[role].label}`, ai: true };
         for (const p of this.players) {
@@ -148,6 +165,7 @@ export class Room {
             private: this.isPrivate,
             hostId: this.hostId,
             status: this.game.status,
+            duration: this.duration,
             players: [...this.players].map((p) => ({
                 id: p.id,
                 name: p.name,
