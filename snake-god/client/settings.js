@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = {
     screenShake: true,
     showHelp: true,
     matchDuration: 90, // secondes, 0 = illimitée (solo, démonstration, salons créés)
+    matchMap: "cube", // "cube" (mode principal) ou "world" (terrain plat, plus accessible)
     audio: AUDIO_DEFAULTS, // volumes et coupures par catégorie
 };
 

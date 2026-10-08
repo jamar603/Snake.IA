@@ -1,7 +1,5 @@
 import { AI, POWERS } from "../../shared/config.js";
-import { add, chebyshev, cross, rotatingWallFits, scale } from "../../shared/grid.js";
-
-import { DIRECTIONS } from "./Navigation.js";
+import { chebyshev, cross } from "../../shared/grid.js";
 
 const AXIS_OF = (dir) => (dir[0] ? "x" : dir[1] ? "y" : "z");
 
@@ -36,6 +34,7 @@ export class GodAI {
         const plans = [];
         if (rotUnlocked && energy >= POWERS.rotatingWall.cost) plans.push(() => this.#rotatingWall(target));
         if (game.god.isUnlocked("dangerZone", game.phase.id)) plans.push(() => this.#zoneAhead(target));
+        if (game.god.isUnlocked("teleporter", game.phase.id) && this.rng() < 0.15) plans.push(() => this.#teleporterAhead(target));
         // Information exclusive : déclenche les météores quand un Snake est dessous.
         if (this.#meteorsWouldHit()) plans.unshift(Object.assign(() => this.#use("triggerEvent"), { priority: true }));
         if (!saving) {
@@ -54,10 +53,19 @@ export class GodAI {
         return this.game.snakes.some((s) => s.alive && s.body.length && next.cells.some((c) => chebyshev(c, s.head) <= 1));
     }
 
+    // Case à `n` pas devant la tête (en suivant les arêtes du cube).
+    #ahead(target, n) {
+        return this.game.grid.map.ray(target.head, target.dir, n).at(-1);
+    }
+
     // Dalle dangereuse en travers de la route.
     #zoneAhead(target) {
-        const center = add(target.head, scale(target.dir, 3));
-        return this.#use("dangerZone", center, AXIS_OF(target.dir));
+        return this.#use("dangerZone", this.#ahead(target, 3), AXIS_OF(target.dir));
+    }
+
+    // Portail sur la route : le Snake est emmené ailleurs (désorientation).
+    #teleporterAhead(target) {
+        return this.#use("teleporter", this.#ahead(target, 3));
     }
 
     #use(power, cell, axis) {
@@ -76,31 +84,27 @@ export class GodAI {
     #trapNearFood(target, nav) {
         const food = nav.pathToFood(target.head)?.path.at(-1);
         if (!food) return false;
-        for (const d of DIRECTIONS) if (this.#use("trap", add(food, d))) return true;
+        for (const n of this.game.grid.map.neighbors(food)) if (this.#use("trap", n)) return true;
         return false;
     }
 
-    // Mur en travers de la route, 3 cases devant la tête.
+    // Mur en travers de la route, 3 cases devant la tête (couché sur la face).
     #wallAhead(target) {
-        const center = add(target.head, scale(target.dir, 3));
-        const perpendicular = [AXIS_OF(target.up), AXIS_OF(cross(target.dir, target.up))];
-        shuffle(perpendicular, this.rng);
-        return perpendicular.some((axis) => this.#use("wall", center, axis));
+        const center = this.#ahead(target, 3);
+        const across = AXIS_OF(cross(target.dir, target.up));
+        return this.#use("wall", center, across) || this.#use("wall", center, AXIS_OF(target.dir));
     }
 
     // Mur rotatif près de la route du Snake : son balayage coupe le passage.
+    // Le serveur vérifie que la lame tient sur la face ; on essaie quelques pivots.
     #rotatingWall(target) {
-        const size = this.game.grid.arena;
-        const arm = POWERS.rotatingWall.arm;
-        const axes = ["y", "x", "z"];
-        shuffle(axes, this.rng);
+        const map = this.game.grid.map;
         for (const dist of [3, 4, 2, 5]) {
-            const center = add(target.head, scale(target.dir, dist));
-            for (const axis of axes) {
-                for (const offset of [[0, 0, 0], ...DIRECTIONS]) {
-                    const pivot = add(center, offset);
-                    if (!rotatingWallFits(pivot, axis, arm, size)) continue;
-                    if (chebyshev(pivot, target.head) < 2) continue;
+            const center = this.#ahead(target, dist);
+            for (const pivot of [center, ...map.neighbors(center)]) {
+                if (chebyshev(pivot, target.head) < 2) continue;
+                // Cube 3D : on essaie les trois axes de rotation.
+                for (const axis of map.kind === "volume" ? ["y", "x", "z"] : [undefined]) {
                     if (this.#use("rotatingWall", pivot, axis)) return true;
                 }
             }
@@ -109,9 +113,7 @@ export class GodAI {
     }
 
     #straight(target, n) {
-        const cells = [target.head];
-        for (let i = 1; i <= n; i++) cells.push(add(target.head, scale(target.dir, i)));
-        return cells;
+        return [target.head, ...this.game.grid.map.ray(target.head, target.dir, n)];
     }
 }
 

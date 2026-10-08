@@ -1,4 +1,4 @@
-import { MATCH_DURATIONS, ROLE_INFO, durationLabel } from "/shared/config.js";
+import { MAPS, MAP_IDS, MATCH_DURATIONS, ROLE_INFO, durationLabel } from "/shared/config.js";
 import { ACCESSORIES, DEFAULT_COSMETICS, EVOLUTIONS, SKINS, TRAILS } from "/shared/cosmetics.js";
 import { AUDIO_CATEGORIES } from "../audio/AudioManager.js";
 import { snakeSkinTextures } from "../render/textures.js";
@@ -66,7 +66,40 @@ export class UIManager extends EventTarget {
         this.#bindSettings();
         this.#bindEnd();
         this.#bindDurations();
+        this.#bindMaps();
         this.renderProfile();
+    }
+
+    // ---------- Map ----------
+    // Solo et démonstration : deux cartes illustrées (préférence gardée). Salon : choix de l'hôte.
+    #bindMaps() {
+        for (const box of document.querySelectorAll("[data-map-pick]")) {
+            box.innerHTML = MAP_IDS.map(
+                (id) => `<button class="map-card" data-map="${id}" role="radio">
+                    <span class="map-art map-art-${id}"><i></i><i></i><i></i></span>
+                    <span class="map-text"><strong>${MAPS[id].label} <em>${{ cube: "principal", volume: "classique", world: "accessible" }[id]}</em></strong><small>${MAPS[id].description}</small></span>
+                </button>`
+            ).join("");
+            for (const b of box.querySelectorAll("[data-map]")) {
+                b.addEventListener("click", () => {
+                    this.settings.set("matchMap", b.dataset.map);
+                    this.#markPersonalMaps();
+                });
+            }
+        }
+        const seg = document.querySelector('[data-map-seg="room"]');
+        seg.innerHTML = MAP_IDS.map((id) => `<button data-map="${id}">${MAPS[id].label}</button>`).join("");
+        for (const b of seg.querySelectorAll("button")) b.addEventListener("click", () => this.emit("setMap", b.dataset.map));
+        this.#markPersonalMaps();
+    }
+
+    #markPersonalMaps() {
+        const current = this.settings.get("matchMap");
+        for (const b of document.querySelectorAll("[data-map-pick] [data-map]")) {
+            const on = b.dataset.map === current;
+            b.classList.toggle("selected", on);
+            b.setAttribute("aria-checked", on);
+        }
     }
 
     emit(type, detail) {
@@ -305,6 +338,10 @@ export class UIManager extends EventTarget {
         const isHost = room.hostId === myId;
         const me = room.players.find((p) => p.id === myId);
         this.#markDuration(document.querySelector('[data-duration-seg="room"]'), room.duration, { locked: !isHost });
+        for (const b of document.querySelectorAll('[data-map-seg="room"] button')) {
+            b.classList.toggle("active", b.dataset.map === (room.map ?? "cube"));
+            b.disabled = !isHost;
+        }
         $("duration-host-only").classList.toggle("hidden", isHost);
         $("start-btn").classList.toggle("hidden", !isHost);
         $("room-wait").classList.toggle("hidden", isHost);
@@ -340,6 +377,17 @@ export class UIManager extends EventTarget {
                 this.#renderCustomize();
             });
         }
+    }
+
+    // Points colorés de l'espèce : couleur principale, secondaire, lueur et yeux.
+    #swatches(skin) {
+        const colors = [
+            [skin.primary, "Couleur principale"],
+            [skin.secondary, "Couleur secondaire"],
+            [skin.glow, "Lueur"],
+            [skin.eye, "Yeux"],
+        ];
+        return `<span class="swatches">${colors.map(([c, label]) => `<i style="background:${hexColor(c)}" title="${label}"></i>`).join("")}</span>`;
     }
 
     // Corps de Snake avec la vraie peau du jeu (texture du modèle 3D), qui défile.
@@ -380,7 +428,7 @@ export class UIManager extends EventTarget {
                 const on = id === current;
                 return `<button class="option ${on ? "selected" : ""}" data-id="${id}" role="radio" aria-checked="${on}">
                     ${this.#optionArt(tab, id, item, skin)}
-                    <span class="opt-text"><strong>${item.name}</strong>${item.description ? `<small>${item.description}</small>` : ""}</span>
+                    <span class="opt-text"><strong>${item.name}</strong>${tab === "skin" ? this.#swatches(item) : ""}${item.description ? `<small>${item.description}</small>` : ""}</span>
                     <span class="opt-check" aria-hidden="true">✓</span></button>`;
             })
             .join("");
@@ -443,6 +491,7 @@ export class UIManager extends EventTarget {
             this.settings.reset();
             this.#renderSettings();
             this.#markPersonalDurations();
+            this.#markPersonalMaps();
         });
     }
 

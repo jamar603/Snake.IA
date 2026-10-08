@@ -8,11 +8,12 @@ export const C2S = {
     CREATE_ROOM: "createRoom", // { private: bool }
     JOIN_ROOM: "joinRoom", // { code }
     LEAVE_ROOM: "leaveRoom",
-    QUICK_PLAY: "quickPlay", // { role | null, duration? } salon privé, IA partout ailleurs, départ immédiat
+    QUICK_PLAY: "quickPlay", // { role | null, duration?, map? } salon privé, IA partout ailleurs, départ immédiat
+    SET_MAP: "setMap", // { map: "cube" | "world" } (hôte) map de la partie
     SET_DURATION: "setDuration", // { seconds } (hôte) durée de la partie, 0 = illimitée
     CHOOSE_ROLE: "chooseRole", // { role: "snake1" | "snake2" | "god" | null }
     START: "start", // lancer la partie depuis le salon (hôte)
-    TURN: "turn", // { turn: "left" | "right" | "up" | "down" } relatif à la tête du Snake
+    TURN: "turn", // { turn: "left" | "right" | "up" | "down" } relatif à la tête (haut/bas : Cube 3D)
     POWER: "power", // { power, cell?: [x,y,z], axis: "x" | "y" | "z" }
     SKILL: "skill", // { skill: "sprint" | "shield" | "phase" } compétence du Snake
     BACK_TO_LOBBY: "backToLobby",
@@ -28,6 +29,7 @@ export const S2C = {
     NOTICE: "notice", // { message } (refus d'un pouvoir, erreur...)
 };
 
+// Gauche / droite partout ; haut / bas seulement dans le Cube 3D (version classique).
 export const TURNS = ["left", "right", "up", "down"];
 
 export const MATCH_STATUS = {

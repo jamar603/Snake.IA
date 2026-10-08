@@ -68,17 +68,19 @@
                 <div class="mode-pane" data-pane="solo" role="tabpanel">
                     <div class="mode-art art-solo"><i></i><i></i><i></i></div>
                     <h3>Solo contre l'IA</h3>
-                    <p class="muted">Choisis la durée puis ton rôle : la partie démarre tout de suite. L'IA joue les deux autres rôles.</p>
-                    <div class="step"><span class="step-n">1</span>Durée de la partie</div>
+                    <p class="muted">Choisis la map, la durée puis ton rôle : la partie démarre tout de suite. L'IA joue les deux autres rôles.</p>
+                    <div class="step"><span class="step-n">1</span>Map</div>
+                    <div class="map-pick" data-map-pick="solo"></div>
+                    <div class="step"><span class="step-n">2</span>Durée de la partie</div>
                     <div class="segmented duration-seg" data-duration-seg="solo"></div>
-                    <div class="step"><span class="step-n">2</span>Ton rôle</div>
+                    <div class="step"><span class="step-n">3</span>Ton rôle</div>
                     <div class="role-pick">
                         <button class="role-big snake" data-solo-role="snake1">
                             <div class="role-emblem emblem-snake"></div>
                             <div>
                                 <h4>Snake</h4>
                                 <p>Survis, mange, grandis. Sprint, Bouclier et Phase.</p>
-                                <span class="role-keys">← → ↑ ↓ · Espace E F</span>
+                                <span class="role-keys">← → · Espace E F</span>
                             </div>
                         </button>
                         <button class="role-big god" data-solo-role="god">
@@ -86,7 +88,7 @@
                             <div>
                                 <h4>Snake God</h4>
                                 <p>Contrôle le monde et élimine les deux Snakes.</p>
-                                <span class="role-keys">1–6 pouvoirs · clic · R · ↑ ↓</span>
+                                <span class="role-keys">1–8 pouvoirs · clic sur une face · R</span>
                             </div>
                         </button>
                     </div>
@@ -108,7 +110,9 @@
                     <div class="mode-art art-demo"><i></i><i></i><i></i></div>
                     <h3>Démonstration IA</h3>
                     <p class="muted">Regarde deux Snakes IA affronter le dieu IA. Idéal pour découvrir les règles.</p>
-                    <div class="step"><span class="step-n">1</span>Durée de la partie</div>
+                    <div class="step"><span class="step-n">1</span>Map</div>
+                    <div class="map-pick" data-map-pick="demo"></div>
+                    <div class="step"><span class="step-n">2</span>Durée de la partie</div>
                     <div class="segmented duration-seg" data-duration-seg="demo"></div>
                     <button class="cta" data-demo-start>Lancer la démonstration</button>
                 </div>
@@ -170,7 +174,7 @@
         </header>
         <ol class="room-steps">
             <li data-step="role">Clique sur une carte pour prendre un rôle</li>
-            <li data-step="duration">L'hôte règle la durée</li>
+            <li data-step="duration">L'hôte choisit la map et la durée</li>
             <li data-step="start">L'hôte lance la partie</li>
         </ol>
         <div class="room-layout">
@@ -206,6 +210,10 @@
                 <h3>Joueurs</h3>
                 <ul id="player-list" class="player-list"></ul>
                 <p class="muted">Les rôles libres sont joués par l'IA. Si un joueur se déconnecte, l'IA le remplace jusqu'à son retour.</p>
+                <div class="duration-pick">
+                    <span>Map</span>
+                    <div class="segmented" data-map-seg="room"></div>
+                </div>
                 <div class="duration-pick">
                     <span>Durée de la partie <small id="duration-host-only" class="muted">(choisie par l'hôte)</small></span>
                     <div class="segmented duration-seg" data-duration-seg="room"></div>
@@ -289,8 +297,8 @@
             </div>
             <div id="audio-toggles" class="audio-toggles"></div>
             <div class="controls-ref">
-                <div><h4>Snake</h4><p>← → ou Q / D : tourner<br>↑ ↓ ou Z / S : monter, descendre<br>Mobile : glisser</p></div>
-                <div><h4>Snake God</h4><p>1 à 6 : pouvoirs · clic : poser<br>R : axe · ↑ ↓ ou Maj + molette : couche<br>Glisser : tourner la vue</p></div>
+                <div><h4>Snake</h4><p>← → ou Q / D : tourner (le passage d'une face à l'autre est automatique)<br>Espace, E, F : Sprint, Bouclier, Phase<br>Mobile : glisser ou toucher à gauche / à droite</p></div>
+                <div><h4>Snake God</h4><p>1 à 8 : pouvoirs · clic sur une face : poser<br>R : orientation des murs<br>Glisser : tourner la vue, molette : zoom</p></div>
             </div>
             <button id="reset-settings" class="ghost-btn">Réinitialiser</button>
         </div>
@@ -324,10 +332,10 @@
             </div>
             <div id="powers" class="powers"></div>
             <div class="god-tools">
-                <span>Couche <strong id="layer-value">0</strong></span>
-                <span>Axe <strong id="axis-value">y</strong></span>
+                <span id="layer-tool" class="hidden">Couche <strong id="layer-value">0</strong></span>
+                <span>Orientation <strong id="axis-value">x</strong></span>
                 <span id="god-hint" class="god-hint"></span>
-                <span class="hint">Clic : poser · R : axe · ↑ ↓ : couche</span>
+                <span class="hint">Clic sur une face : poser · R : orientation · glisser : tourner</span>
             </div>
         </div>
 
@@ -335,7 +343,7 @@
             <div id="skills" class="skills"></div>
             <div class="evo-label"><span id="evo-name">Éclosion</span><small id="evo-next"></small></div>
             <div class="evo-bar"><div id="evo-fill"></div></div>
-            <div id="snake-help" class="snake-help">← → tourner · ↑ ↓ monter / descendre · Espace, E, F : compétences</div>
+            <div id="snake-help" class="snake-help">← → tourner (la face change toute seule) · Espace, E, F : compétences</div>
         </div>
 
         <div id="you-are" class="you-are"></div>

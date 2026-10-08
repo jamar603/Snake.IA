@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import WebSocket from "ws";
 import { C2S, S2C } from "../shared/protocol.js";
+import { createMap } from "../shared/maps/index.js";
 import { MultiplayerManager } from "../server/MultiplayerManager.js";
 
 // Client de test : historique des messages, `wait` cherche le prochain message
@@ -44,15 +45,13 @@ function freeCell(state) {
     for (const f of state.food) taken.add(f.cell.join());
     for (const c of state.traps) taken.add(c.join());
     for (const s of state.snakes) for (const c of s.body) taken.add(c.join());
+    for (const t of state.teleporters ?? []) taken.add(t.a.join()).add(t.b.join());
     const heads = state.snakes.map((s) => s.body[0]);
-    const { min, max } = state.arena;
-    for (let x = min; x <= max; x++)
-        for (let y = max; y >= min; y--)
-            for (let z = min; z <= max; z++) {
-                const c = [x, y, z];
-                if (taken.has(c.join())) continue;
-                if (heads.every((h) => Math.max(...h.map((v, i) => Math.abs(v - c[i]))) > 2)) return c;
-            }
+    // Cellules de la map (surface du cube ou terrain), recréées comme le fait le client.
+    for (const c of createMap(state.map.kind, state.map.arenaSize).cells()) {
+        if (taken.has(c.join())) continue;
+        if (heads.every((h) => Math.max(...h.map((v, i) => Math.abs(v - c[i]))) > 2)) return c;
+    }
     throw new Error("aucune cellule libre");
 }
 
@@ -108,7 +107,7 @@ test("trois joueurs, pouvoirs, fin de partie et reconnexion", async () => {
 
     // Un Snake ne peut pas utiliser les pouvoirs.
     a.send({ t: C2S.POWER, power: "trap", cell: freeCell(withTrap) });
-    a.send({ t: C2S.TURN, turn: "up" });
+    a.send({ t: C2S.TURN, turn: "left" });
 
     // Reconnexion : même jeton -> même rôle.
     a.ws.close();

@@ -1,17 +1,11 @@
-import { add, chebyshev, cross, inBounds, key, neg, rotatingWallCells } from "../../shared/grid.js";
-
-export const DIRECTIONS = [
-    [1, 0, 0], [-1, 0, 0],
-    [0, 1, 0], [0, -1, 0],
-    [0, 0, 1], [0, 0, -1],
-];
+import { chebyshev, cross, key, neg, rotatingWallCells } from "../../shared/grid.js";
 
 // Vue du monde partagée par les IA : cellules bloquées et cellules dangereuses
 // à un instant donné. Les IA lisent le même état que celui envoyé aux joueurs.
 export class Navigation {
     constructor(game) {
         this.game = game;
-        this.size = game.grid.arena; // bornes de l'arène actuelle
+        this.map = game.grid.map; // topologie : voisins et passage des arêtes
         this.blocked = new Set();
         this.danger = new Map(); // cellKey -> coût
         this.traps = new Set();
@@ -30,10 +24,11 @@ export class Navigation {
         }
         // Mur rotatif : comme un joueur, on ne voit venir que le prochain quart de tour,
         // et seulement quand il est imminent.
+        const sweep = game.mapConfig?.aiSweepDanger ?? [90, 12];
         for (const w of game.walls.walls.values()) {
             if (w.kind !== "rotating") continue;
             const imminent = w.nextRotateAt - game.now <= game.tickMs * 4;
-            for (const c of rotatingWallCells(w.pivot, w.axis, w.arm, w.turns + 1)) this.#addDanger(c, imminent ? 40 : 3);
+            for (const c of rotatingWallCells(w.pivot, w.axis, w.arm, w.turns + 1)) this.#addDanger(c, imminent ? sweep[0] : sweep[1]);
         }
         for (const z of game.zones.zones.values()) for (const c of z.cells) this.#addDanger(c, 80);
         this.food = game.food.snapshot();
@@ -45,7 +40,7 @@ export class Navigation {
     }
 
     isOpen(cell) {
-        return inBounds(cell, this.size) && !this.blocked.has(key(cell));
+        return this.map.isCell(cell) && !this.blocked.has(key(cell));
     }
 
     dangerAt(cell) {
@@ -53,28 +48,46 @@ export class Navigation {
     }
 
     // Distance (en cases) jusqu'à la nourriture la plus proche, en évitant les pièges.
-    // Renvoie { dist, path } ou null.
+    // Renvoie { dist, path } ou null. Un seul parcours en largeur par tick, lancé depuis
+    // toutes les nourritures à la fois (champ de distances), puis lu directement.
     pathToFood(start, maxDepth = 40) {
-        const foodKeys = new Set(this.food.map(key));
-        if (!foodKeys.size) return null;
-        const prev = new Map([[key(start), null]]);
-        let frontier = [start];
-        for (let depth = 0; depth <= maxDepth && frontier.length; depth++) {
+        const field = this.#foodField();
+        let d = field.get(key(start));
+        if (d === undefined || d > maxDepth) return null;
+        const path = [start];
+        let c = start;
+        while (d > 0) {
+            c = this.map.neighbors(c).find((n) => field.get(key(n)) === d - 1);
+            if (!c) break;
+            path.push(c);
+            d--;
+        }
+        return { dist: path.length - 1, path };
+    }
+
+    #foodField() {
+        if (this.field) return this.field;
+        const field = new Map();
+        let frontier = [];
+        for (const f of this.food) {
+            if (field.has(key(f))) continue;
+            field.set(key(f), 0);
+            frontier.push(f);
+        }
+        for (let depth = 1; frontier.length && depth <= 40; depth++) {
             const next = [];
             for (const c of frontier) {
-                const k = key(c);
-                if (foodKeys.has(k)) return { dist: depth, path: unwind(prev, c) };
-                for (const d of DIRECTIONS) {
-                    const n = add(c, d);
+                for (const n of this.map.neighbors(c)) {
                     const nk = key(n);
-                    if (prev.has(nk) || !this.isOpen(n) || this.traps.has(nk)) continue;
-                    prev.set(nk, c);
+                    if (field.has(nk) || !this.isOpen(n) || this.traps.has(nk)) continue;
+                    field.set(nk, depth);
                     next.push(n);
                 }
             }
             frontier = next;
         }
-        return null;
+        this.field = field;
+        return field;
     }
 
     // Nombre de cases accessibles depuis `start` (plafonné) : évite de s'enfermer.
@@ -84,8 +97,7 @@ export class Navigation {
         const stack = [start];
         while (stack.length && seen.size < limit) {
             const c = stack.pop();
-            for (const d of DIRECTIONS) {
-                const n = add(c, d);
+            for (const n of this.map.neighbors(c)) {
                 const nk = key(n);
                 if (seen.has(nk) || !this.isOpen(n)) continue;
                 seen.add(nk);
@@ -101,20 +113,16 @@ export class Navigation {
     }
 }
 
-// Les 5 mouvements possibles d'un Snake (pas de demi-tour) et le virage associé.
-export function snakeMoves(snake) {
+// Les 3 mouvements possibles d'un Snake (tout droit, gauche, droite) avec la case et la
+// direction obtenues sur la map (passage d'arête compris).
+export function snakeMoves(snake, map) {
     const right = cross(snake.dir, snake.up);
-    return [
+    const moves = [
         { turn: null, dir: snake.dir },
         { turn: "right", dir: right },
         { turn: "left", dir: neg(right) },
-        { turn: "up", dir: snake.up },
-        { turn: "down", dir: neg(snake.up) },
     ];
-}
-
-function unwind(prev, end) {
-    const path = [];
-    for (let c = end; c; c = prev.get(key(c))) path.push(c);
-    return path.reverse();
+    // Cube 3D : haut et bas en plus (version classique).
+    if (map.kind === "volume") moves.push({ turn: "up", dir: snake.up }, { turn: "down", dir: neg(snake.up) });
+    return moves.map((m) => ({ ...m, step: map.step(snake.head, m.dir) }));
 }

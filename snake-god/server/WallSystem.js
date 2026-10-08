@@ -92,6 +92,16 @@ export class WallSystem {
         return events;
     }
 
+    // Agrandissement du monde : les murs suivent la surface.
+    remap(move) {
+        this.cellIndex.clear();
+        for (const w of this.walls.values()) {
+            w.cells = w.cells.map(move);
+            if (w.pivot) w.pivot = move(w.pivot);
+            this.#index(w);
+        }
+    }
+
     snapshot() {
         return [...this.walls.values()].map((w) => ({
             id: w.id,

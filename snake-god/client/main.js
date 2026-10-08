@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { GRID_SIZE } from "/shared/config.js";
+import { GRID_SIZE, MAPS } from "/shared/config.js";
+import { createMap } from "/shared/maps/index.js";
 import { DEFAULT_COSMETICS } from "/shared/cosmetics.js";
 import { cross, key } from "/shared/grid.js";
 import { MATCH_STATUS, S2C } from "/shared/protocol.js";
@@ -8,7 +9,7 @@ import { GameAudio } from "./audio/GameAudio.js";
 import { GodController } from "./input/GodController.js";
 import { SnakeInput } from "./input/SnakeInput.js";
 import { MultiplayerClient } from "./net/MultiplayerClient.js";
-import { GodCamera, MenuCamera, SnakeCamera } from "./render/Cameras.js";
+import { CameraController } from "./render/Cameras.js";
 import { cellToWorld } from "./render/coords.js";
 import { Effects } from "./render/Effects.js";
 import { Environment } from "./render/Environment.js";
@@ -34,32 +35,32 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(settings.get("fov"), 1, 0.1, 300);
 const postfx = new PostFX(renderer, scene, camera);
 const MENU_ARENA = 7; // taille du cube affiché dans les menus
+// Map courante (CUBE ou WORLD) : même topologie que le serveur, recréée depuis l'état.
+let map = createMap("cube", MENU_ARENA);
+let space = GRID_SIZE; // espace de coordonnées de la map
 const env = new Environment(scene, GRID_SIZE);
 env.setArena(MENU_ARENA);
-const world = new WorldController(scene, GRID_SIZE);
+const world = new WorldController(scene, GRID_SIZE, map);
 const effects = new Effects(scene);
 const menuStage = new MenuStage(scene, effects, MENU_ARENA);
-const snakeCamera = new SnakeCamera(camera);
-const godCamera = new GodCamera(camera, canvas, GRID_SIZE);
-godCamera.setArena(MENU_ARENA);
-const menuCamera = new MenuCamera(camera, MENU_ARENA);
+const cameras = new CameraController(camera, canvas, MENU_ARENA);
+cameras.setMap("cube", MENU_ARENA);
 
 // ---------- Réseau et interface ----------
 const net = new MultiplayerClient(() => ({ name: settings.profile.name, cosmetics: settings.profile.cosmetics }));
 const ui = new UIManager(settings);
 const hud = new Hud();
-const god = new GodController({ scene, camera, canvas, size: GRID_SIZE, net });
+const god = new GodController({ scene, camera, canvas, size: GRID_SIZE, net, map });
 const snakeInput = new SnakeInput(
     (turn) => net.turn(turn),
     (skill) => net.useSkill(skill)
 );
 const audio = new AudioManager(settings);
-const gameAudio = new GameAudio(audio, (c) => cellToWorld(c, GRID_SIZE));
+const gameAudio = new GameAudio(audio, (c) => cellToWorld(c, space));
 gameAudio.bindInterface();
 gameAudio.menu();
 
 let mode = "menu"; // "menu" | "game"
-let cameraMode = "menu"; // "menu" | "god" | "snake"
 let room = null;
 let myRole = null;
 let state = null;
@@ -75,7 +76,7 @@ function applySettings() {
     env.setShadows(q.shadows);
     effects.density = q.particles;
     camera.fov = settings.get("fov");
-    snakeCamera.distance = settings.get("cameraDistance");
+    cameras.snake.distance = settings.get("cameraDistance");
     hud.showHelp = settings.get("showHelp");
     resize();
 }
@@ -85,7 +86,7 @@ settings.addEventListener("change", applySettings);
 ui.addEventListener("screen", (e) => {
     const custom = e.detail === "customize";
     menuStage.setShowcase(custom, settings.profile.cosmetics);
-    menuCamera.mode = custom ? "showcase" : "world";
+    cameras.menu.mode = custom ? "showcase" : "world";
 });
 ui.addEventListener("profile", (e) => {
     settings.setProfile(e.detail);
@@ -95,9 +96,10 @@ ui.addEventListener("profile", (e) => {
 ui.addEventListener("previewTier", (e) => menuStage.setShowcaseTier(e.detail));
 ui.addEventListener("quickPlay", (e) => {
     quickRole = e.detail;
-    net.quickPlay(e.detail, settings.get("matchDuration"));
+    net.quickPlay(e.detail, settings.get("matchDuration"), settings.get("matchMap"));
 });
 ui.addEventListener("setDuration", (e) => net.setDuration(e.detail));
+ui.addEventListener("setMap", (e) => net.setMap(e.detail));
 ui.addEventListener("createRoom", (e) => {
     quickRole = undefined;
     net.createRoom(e.detail);
@@ -118,7 +120,7 @@ ui.addEventListener("endAction", (e) => {
         net.leaveRoom();
         enterMenu("main");
     } else if (e.detail === "lobby") net.backToLobby();
-    else if (quickRole !== undefined) net.quickPlay(quickRole, settings.get("matchDuration"));
+    else if (quickRole !== undefined) net.quickPlay(quickRole, settings.get("matchDuration"), settings.get("matchMap"));
     else net.start();
 });
 hud.addEventListener("power", (e) => god.selectPower(e.detail));
@@ -235,30 +237,45 @@ function resetMatchView() {
     effects.clear();
     for (const v of snakeViews.values()) v.dispose();
     snakeViews.clear();
-    snakeCamera.reset();
+    cameras.snake.reset();
     state = null;
     env.setPhase(1);
     world.setPhase(1);
-    world.setArena(MENU_ARENA);
-    env.setArena(MENU_ARENA);
+    useMap({ kind: "cube", space: GRID_SIZE, arenaSize: MENU_ARENA });
+}
+
+// Passe à la map décrite par le serveur ({ kind, space, arenaSize }) si elle a changé.
+function useMap(info) {
+    if (map.kind === info.kind && space === info.space) return;
+    map = createMap(info.kind, info.arenaSize);
+    space = info.space;
+    world.setMap(map, space);
+    env.setMap(map.kind, world.floorY);
+    env.setArena(info.arenaSize);
+    god.setMap(map, space);
+    snakeInput.vertical = map.kind === "volume";
+    cameras.setMap(map.kind, info.arenaSize, world.floorY);
+    for (const v of snakeViews.values()) v.setMap(map, space);
 }
 
 function applyState(s) {
     const now = performance.now();
-    world.applyState(s, now);
+    useMap(s.map);
+    world.applyState(s, now); // met aussi la topologie à la taille de l'arène
     effects.floorY = world.floorY;
     env.setArena(s.arena.size);
-    godCamera.setArena(s.arena.size);
+    cameras.setArena(s.arena.size);
 
     const occupied = new Set();
     for (const sn of s.snakes) for (const c of sn.body) occupied.add(key(c));
     for (const sn of s.snakes) {
         let view = snakeViews.get(sn.id);
         if (!view) {
-            view = new SnakeView(scene, s.size, effects, sn.cosmetics ?? DEFAULT_COSMETICS[sn.id]);
+            view = new SnakeView(scene, s.size, effects, sn.cosmetics ?? DEFAULT_COSMETICS[sn.id], map);
             snakeViews.set(sn.id, view);
         }
         view.isMine = sn.id === myRole;
+        view.floorY = world.floorY;
         view.floorY = world.floorY;
         const alive = sn.alive && sn.body.length;
         const run = alive ? world.freeRun(sn.body[0], sn.dir, occupied) : 0;
@@ -266,7 +283,8 @@ function applyState(s) {
         // Snake du joueur : place libre dans chaque direction de virage (flèches de guidage).
         if (view.isMine && alive) {
             const right = cross(sn.dir, sn.up);
-            const dirs = { right, left: right.map((v) => -v), up: sn.up, down: sn.up.map((v) => -v) };
+            const dirs = { right, left: right.map((v) => -v + 0) };
+            if (map.kind === "volume") Object.assign(dirs, { up: sn.up, down: sn.up.map((v) => -v + 0) });
             view.setTurnRuns(Object.fromEntries(Object.entries(dirs).map(([t, d]) => [t, { dir: d, run: world.freeRun(sn.body[0], d, occupied) }])));
         }
     }
@@ -284,11 +302,11 @@ function applyState(s) {
 // Effets visuels déclenchés par les événements du serveur.
 function playEvents(s, size) {
     const pos = (c) => cellToWorld(c, size);
+    const normalOf = (c) => new THREE.Vector3(...map.normalAt(c));
     // Secousse sur la caméra active (Snake ou dieu), si le joueur l'a laissée activée.
     const shake = (amount) => {
         if (!settings.get("screenShake")) return;
-        if (cameraMode === "snake") snakeCamera.shake(amount);
-        else godCamera.shake(amount);
+        cameras.shake(amount);
     };
     for (const ev of s.events) {
         const p = ev.cells?.[0] && pos(ev.cells[0]);
@@ -297,7 +315,7 @@ function playEvents(s, size) {
         switch (ev.type) {
             case "foodEaten":
                 view?.onEat(ev.golden);
-                if (ev.snake === myRole && cameraMode === "snake") snakeCamera.punch(ev.golden ? 0.45 : 0.18);
+                if (ev.snake === myRole && cameras.mode === "snake") cameras.snake.punch(ev.golden ? 0.45 : 0.18);
                 effects.burst(p, ev.golden ? 0xffd34d : 0x9dff6a, { count: ev.golden ? 70 : 28, speed: ev.golden ? 4 : 2.6 });
                 if (ev.golden) effects.ring(p, 0xffd34d, { size: 2 });
                 break;
@@ -349,6 +367,23 @@ function playEvents(s, size) {
                     effects.burst(p, 0xe6f4ff, { count: 30, speed: 1.6, life: 0.6, endColor: glow });
                 }
                 break;
+            case "teleporterPlaced":
+                for (const c of ev.cells) {
+                    effects.ring(pos(c), 0x6bf0ff, { size: 1.4, normal: normalOf(c) });
+                    effects.burst(pos(c), 0x6bf0ff, { count: 24, speed: 2.4, endColor: 0x4b2a9a });
+                }
+                break;
+            case "teleported":
+                // Entrée et sortie du portail : éclair et anneau des deux côtés.
+                for (const c of ev.cells) {
+                    effects.flash(pos(c), 0xbff8ff, 2);
+                    effects.ring(pos(c), glow, { size: 1.2, life: 0.4, normal: normalOf(c) });
+                }
+                if (ev.snake === myRole) postfx.pulse(0.6);
+                break;
+            case "teleporterClosed":
+                for (const c of ev.cells) effects.burst(pos(c), 0x8fa2ff, { count: 12, speed: 1.6 });
+                break;
             case "trapPlaced":
                 effects.ring(p, 0xff3b5c, { size: 1 });
                 break;
@@ -389,24 +424,27 @@ function playEvents(s, size) {
                 if (ev.event === "foodRain") for (const c of ev.cells) effects.burst(pos(c), 0x9dff6a, { count: 18, speed: 2 });
                 break;
             case "phase":
-                effects.ring(new THREE.Vector3(), 0xffffff, { size: s.arena.size, life: 1.4, width: 0.04 });
+                effects.ring(world.center, 0xffffff, { size: s.arena.size * 0.35, life: 1.2, width: 0.04 });
                 postfx.pulse(1.2);
                 break;
             case "expansionStart":
                 world.startExpansion(ev.fromSize, ev.toSize, ev.inMs);
                 for (let i = 0; i < 6; i++) {
                     const dir = new THREE.Vector3().randomDirection().multiplyScalar(ev.fromSize / 2);
-                    effects.ring(dir, 0xc9a6ff, { size: 1.2, normal: dir.clone(), life: 1 });
+                    if (map.kind === "world") dir.y = 0;
+                    effects.ring(dir.clone().add(world.center), 0xc9a6ff, { size: 1.2, normal: map.kind === "world" ? undefined : dir.clone(), life: 1 });
                 }
                 break;
             case "expansionComplete":
-                effects.ring(new THREE.Vector3(), 0xffffff, { size: ev.toSize, life: 1.2, width: 0.06 });
-                effects.ring(new THREE.Vector3(), 0xc9a6ff, { size: ev.toSize, life: 1.4, normal: new THREE.Vector3(1, 0, 0) });
+                effects.ring(world.center, 0xffffff, { size: ev.toSize * 0.3, life: 1.1, width: 0.06 });
+                if (map.kind === "cube") effects.ring(world.center, 0xc9a6ff, { size: ev.toSize * 0.3, life: 1.3, normal: new THREE.Vector3(1, 0, 0) });
                 // Gerbe d'énergie sur toute la nouvelle surface.
                 for (let i = 0; i < 40; i++) {
                     const h = ev.toSize / 2;
                     const p2 = new THREE.Vector3((Math.random() - 0.5) * 2 * h, (Math.random() - 0.5) * 2 * h, (Math.random() - 0.5) * 2 * h);
-                    p2.setComponent(Math.floor(Math.random() * 3), Math.random() < 0.5 ? -h : h);
+                    if (map.kind === "world") p2.y = 0;
+                    else p2.setComponent(Math.floor(Math.random() * 3), Math.random() < 0.5 ? -h : h);
+                    p2.add(world.center);
                     effects.burst(p2, 0xd9c2ff, { count: 6, speed: 1.5, life: 0.9 });
                 }
                 for (const c of ev.cells) effects.burst(pos(c), 0x9fc0ff, { count: 12, speed: 2 });
@@ -425,16 +463,7 @@ function updateControls() {
     snakeInput.enabled = !!snakeMode;
     god.setEnabled(!!playing && myRole === "god" && state.status === MATCH_STATUS.PLAYING);
 
-    const next = mode === "menu" ? "menu" : snakeMode ? "snake" : "god";
-    if (next === cameraMode) return;
-    const previous = cameraMode;
-    cameraMode = next;
-    if (next === "god") godCamera.activate();
-    else godCamera.deactivate();
-    if (next === "snake") {
-        snakeCamera.reset();
-        if (previous === "menu") snakeCamera.startIntro();
-    }
+    cameras.setMode(mode === "menu" ? "menu" : snakeMode ? "snake" : "god");
 }
 
 // ---------- Boucle de rendu ----------
@@ -458,22 +487,21 @@ function frame() {
     last = now;
 
     env.update(now, dt);
-    world.setCameraFade(cameraMode === "snake" ? camera.position : null);
+    world.setCameraFade(cameras.mode === "snake" ? camera.position : null);
     world.update(now, dt);
     effects.update(dt);
 
     if (mode === "menu") {
         menuStage.update(dt);
-        menuCamera.update(dt, menuStage.showcasePos);
+        cameras.update(dt, { showcase: menuStage.showcasePos });
     } else {
         const alpha = state ? Math.min(1, (now - stateTime) / state.tickMs) : 1;
         for (const v of snakeViews.values()) v.update(alpha, now, dt);
         const myView = snakeViews.get(myRole);
         world.setFocus(myView?.cur?.alive ? myView.headPos : null);
-        if (cameraMode === "snake" && myView) snakeCamera.update(myView.headPos, myView.headQuat, dt);
-        else godCamera.update(dt);
+        cameras.update(dt, { view: myView });
         // Sprint : le champ de vision s'élargit (ease-out à l'entrée, retour doux).
-        const fov = settings.get("fov") + (cameraMode === "snake" && myView?.sprinting ? 9 : 0);
+        const fov = settings.get("fov") + (cameras.mode === "snake" && myView?.sprinting ? 9 : 0);
         if (Math.abs(camera.fov - fov) > 0.05) {
             camera.fov += (fov - camera.fov) * (1 - Math.exp(-dt * (fov > camera.fov ? 12 : 5)));
             camera.updateProjectionMatrix();
@@ -493,7 +521,8 @@ net.on(S2C.WELCOME, () => {
     if (play && !room) {
         params.delete("play");
         quickRole = play === "demo" ? null : play;
-        net.quickPlay(quickRole, settings.get("matchDuration"));
+        if (MAPS[params.get("map")]) settings.set("matchMap", params.get("map"));
+        net.quickPlay(quickRole, settings.get("matchDuration"), settings.get("matchMap"));
     }
 });
 ui.show("main", { push: false });

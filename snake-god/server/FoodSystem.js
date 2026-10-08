@@ -73,6 +73,12 @@ export class FoodSystem {
         for (const [k, f] of this.food) if (f.expiresAt !== null && now >= f.expiresAt) this.food.delete(k);
     }
 
+    remap(move) {
+        const items = [...this.food.values()].map((f) => ({ ...f, cell: move(f.cell) }));
+        this.food = new Map(items.map((f) => [key(f.cell), f]));
+        this.upcoming = this.upcoming.map(move);
+    }
+
     // Liste simple des cellules (utilisée par les IA).
     snapshot() {
         return [...this.food.values()].map((f) => f.cell);

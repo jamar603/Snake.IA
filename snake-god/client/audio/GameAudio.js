@@ -1,4 +1,4 @@
-import { GRID_SIZE } from "/shared/config.js";
+import { MAPS } from "/shared/config.js";
 import { chebyshev, key, rotatingWallCells } from "/shared/grid.js";
 import { Ambient } from "./Ambient.js";
 import { Music } from "./Music.js";
@@ -100,7 +100,9 @@ export class GameAudio {
         if (state.status === "countdown") intensity = Math.min(intensity, 0.2);
         this.music.setMode("game");
         this.music.setIntensity(intensity);
-        this.ambient.update(intensity, state.arena.size / GRID_SIZE);
+        // Taille relative du monde (0..1) : la plus grande taille de la map en cours.
+        const sizes = MAPS[state.map?.kind ?? "cube"].sizes;
+        this.ambient.update(intensity, state.arena.size / sizes.at(-1));
 
         // Déplacement du Snake local : petit tic alterné à chaque case.
         if (mine?.alive && prev && state.status === "playing") {

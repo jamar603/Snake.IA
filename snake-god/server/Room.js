@@ -1,4 +1,4 @@
-import { MATCH_DURATIONS, MATCH_SECONDS, ROLE_INFO, ROLES, SNAKE_ROLES } from "../shared/config.js";
+import { DEFAULT_MAP, MAPS, MATCH_DURATIONS, MATCH_SECONDS, ROLE_INFO, ROLES, SNAKE_ROLES } from "../shared/config.js";
 import { C2S, MATCH_STATUS, S2C, TURNS } from "../shared/protocol.js";
 import { GameManager } from "./GameManager.js";
 
@@ -11,6 +11,7 @@ export class Room {
         this.isPrivate = isPrivate;
         this.game = new GameManager(gameOptions);
         this.duration = gameOptions.matchSeconds ?? MATCH_SECONDS; // secondes, 0 = illimitée
+        this.map = DEFAULT_MAP; // "cube" ou "world"
         this.players = new Set();
         this.hostId = null;
         this.timer = null;
@@ -80,6 +81,10 @@ export class Room {
                 if (!idle || player.id !== this.hostId) return;
                 if (!this.setDuration(msg.seconds)) return;
                 return this.broadcastRoom();
+            case C2S.SET_MAP:
+                if (!idle || player.id !== this.hostId) return;
+                if (!this.setMap(msg.map)) return;
+                return this.broadcastRoom();
             case C2S.START:
                 if (!idle) return;
                 if (player.id !== this.hostId) return this.#notice(player, "Seul l'hôte peut lancer la partie.");
@@ -111,9 +116,16 @@ export class Room {
         return true;
     }
 
+    setMap(kind) {
+        if (!MAPS[kind]) return false;
+        this.map = kind;
+        return true;
+    }
+
     // Les rôles libres (ou dont le joueur est absent) sont joués par l'IA.
     start() {
         this.game.setDuration(this.duration);
+        this.game.setMap(this.map);
         const roster = {};
         for (const role of ROLES) roster[role] = { name: `IA ${ROLE_INFO[role].label}`, ai: true };
         for (const p of this.players) {
@@ -152,6 +164,7 @@ export class Room {
             code: this.code,
             name: this.name,
             status: this.game.status,
+            map: this.map,
             players: this.connectedCount,
             roles: ROLES.filter((r) => [...this.players].some((p) => p.role === r)),
         };
@@ -166,6 +179,7 @@ export class Room {
             hostId: this.hostId,
             status: this.game.status,
             duration: this.duration,
+            map: this.map,
             players: [...this.players].map((p) => ({
                 id: p.id,
                 name: p.name,

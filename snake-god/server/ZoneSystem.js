@@ -50,6 +50,13 @@ export class ZoneSystem {
         return null;
     }
 
+    remap(move) {
+        for (const z of this.zones.values()) {
+            z.cells = z.cells.map(move);
+            z.keys = new Set(z.cells.map(key));
+        }
+    }
+
     snapshot(now) {
         return [...this.zones.values()].map((z) => ({
             id: z.id,

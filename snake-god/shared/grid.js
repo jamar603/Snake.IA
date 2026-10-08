@@ -68,11 +68,15 @@ export function rotatingWallCells(pivot, axis, arm, turns) {
     return rotatingWallOffsets(axis, arm).map((o) => add(pivot, rotateQuarter(o, axis, turns)));
 }
 
-// Un mur rotatif doit rester dans le cube dans ses 4 orientations.
-export function rotatingWallFits(pivot, axis, arm, size) {
+// `accept` : fonction (cellule) -> booléen (ex. « sur la même face »), ou des bornes.
+const acceptor = (accept) => (typeof accept === "function" ? accept : (c) => inBounds(c, accept));
+
+// Un mur rotatif doit rester dans la map dans ses 4 orientations.
+export function rotatingWallFits(pivot, axis, arm, accept) {
+    const ok = acceptor(accept);
     for (let t = 0; t < 4; t++) {
         for (const c of rotatingWallCells(pivot, axis, arm, t)) {
-            if (!inBounds(c, size)) return false;
+            if (!ok(c)) return false;
         }
     }
     return true;
@@ -87,14 +91,15 @@ export function straightWallCells(center, axis, length) {
     return cells;
 }
 
-// Dalle carrée centrée sur `center`, perpendiculaire à `axis`, coupée aux bords du cube.
-export function dangerZoneCells(center, axis, radius, size) {
+// Dalle carrée centrée sur `center`, perpendiculaire à `axis`, coupée aux bords de la face.
+export function dangerZoneCells(center, axis, radius, accept) {
+    const ok = acceptor(accept);
     const [u, v] = Object.keys(AXES).filter((a) => a !== axis).map((a) => AXES[a]);
     const cells = [];
     for (let i = -radius; i <= radius; i++) {
         for (let j = -radius; j <= radius; j++) {
             const c = add(center, add(scale(u, i), scale(v, j)));
-            if (inBounds(c, size)) cells.push(c);
+            if (ok(c)) cells.push(c);
         }
     }
     return cells;

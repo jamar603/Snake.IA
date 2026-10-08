@@ -30,6 +30,11 @@ export class TrapSystem {
         return true;
     }
 
+    remap(move) {
+        const cells = [...this.traps.values()].map(move);
+        this.traps = new Map(cells.map((c) => [key(c), c]));
+    }
+
     snapshot() {
         return [...this.traps.values()];
     }

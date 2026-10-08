@@ -1,20 +1,20 @@
 import { SNAKE } from "../shared/config.js";
-import { add, cross, neg } from "../shared/grid.js";
+import { cross, neg } from "../shared/grid.js";
 import { SnakeGrowth } from "./SnakeGrowth.js";
 import { SnakeHealth } from "./SnakeHealth.js";
 import { SnakeSkills } from "./SnakeSkills.js";
 
-// Un Snake sur la grille 3D. Les virages sont relatifs à la tête :
-// gauche/droite tournent autour de `up`, haut/bas font basculer le nez.
+// Un Snake sur la surface de la map. Contrôle classique : gauche et droite tournent
+// autour de `up` (la normale de la face) ; la map gère seule le passage d'une face à l'autre.
 export class SnakeController {
-    constructor(id, name) {
+    constructor(id, name, maxHp = SNAKE.maxHp) {
         this.id = id;
         this.name = name;
         this.body = []; // cellules, tête en premier
         this.dir = [1, 0, 0];
         this.up = [0, 1, 0];
         this.turnQueue = [];
-        this.health = new SnakeHealth(SNAKE.maxHp, SNAKE.invulnerableMs);
+        this.health = new SnakeHealth(maxHp, SNAKE.invulnerableMs);
         this.growth = new SnakeGrowth();
         this.skills = new SnakeSkills();
         this.alive = true;
@@ -54,6 +54,7 @@ export class SnakeController {
             case "left":
                 this.dir = neg(right);
                 break;
+            // Cube 3D seulement (GameManager filtre ces virages sur les autres maps).
             case "up":
                 [this.dir, this.up] = [this.up, neg(this.dir)];
                 break;
@@ -61,10 +62,6 @@ export class SnakeController {
                 [this.dir, this.up] = [neg(this.up), this.dir];
                 break;
         }
-    }
-
-    nextHead() {
-        return add(this.head, this.dir);
     }
 
     // true si la queue reste en place à ce déplacement (le Snake grandit).

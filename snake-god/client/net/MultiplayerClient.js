@@ -51,8 +51,13 @@ export class MultiplayerClient extends EventTarget {
         this.send({ t: C2S.SET_PROFILE, ...this.getProfile() });
     }
 
-    quickPlay(role, duration) {
-        this.send({ t: C2S.QUICK_PLAY, role, duration });
+    quickPlay(role, duration, map) {
+        this.send({ t: C2S.QUICK_PLAY, role, duration, map });
+    }
+
+    // Hôte : map de la partie ("cube" ou "world").
+    setMap(map) {
+        this.send({ t: C2S.SET_MAP, map });
     }
 
     // Hôte : durée de la partie (secondes, 0 = illimitée).

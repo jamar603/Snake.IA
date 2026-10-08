@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-// Caméra des Snakes (troisième personne) : derrière et au-dessus de la tête,
-// alignée sur son "haut", pour que gauche / droite / haut / bas correspondent à l'écran.
+// Caméra des Snakes (troisième personne) : derrière et au-dessus de la tête, alignée sur
+// la face où il rampe. Sur le CUBE, elle anticipe les arêtes : son « haut » commence à
+// pencher vers la face suivante une ou deux cases avant le passage, puis suit en douceur.
 export class SnakeCamera {
     constructor(camera) {
         this.camera = camera;
@@ -33,12 +34,13 @@ export class SnakeCamera {
         this.intro = { from: this.camera.position.clone(), up: this.camera.up.clone(), t: 0 };
     }
 
-    update(headPos, headQuat, dt) {
+    update(headPos, headQuat, dt, edge = null) {
         const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(headQuat);
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(headQuat);
-        const d = this.distance;
-        const desiredPos = headPos.clone().addScaledVector(forward, -3.8 * d).addScaledVector(up, 2.6 * d);
-        const desiredLook = headPos.clone().addScaledVector(forward, 3.5).addScaledVector(up, 0.4);
+        if (edge?.t > 0) up.lerp(edge.next, edge.t * 0.35).normalize();
+        const d = this.distance * (this.mapKind === "cube" ? 1.1 : 1);
+        const desiredPos = headPos.clone().addScaledVector(forward, -3.8 * d).addScaledVector(up, 2.9 * d);
+        const desiredLook = headPos.clone().addScaledVector(forward, 3).addScaledVector(up, 0.2);
 
         const far = this.pos.distanceTo(desiredPos) > 4.5;
         const k = !this.ready || far ? 1 : 1 - Math.exp(-dt * 9);
@@ -86,6 +88,12 @@ export class GodCamera {
         this.controls.enabled = false;
         this.home = new THREE.Vector3(size * 1.15, size * 0.95, size * 1.35);
         this.shakeAmount = 0;
+        this.mapKind = "cube";
+    }
+
+    // WORLD : vue plus plongeante sur le terrain ; CUBE : vue de trois quarts.
+    setMap(kind) {
+        this.mapKind = kind;
     }
 
     // Secousse en rotation (pas en position) : OrbitControls recalcule l'orientation
@@ -95,16 +103,20 @@ export class GodCamera {
     }
 
     setArena(size) {
-        this.controls.minDistance = size * 0.9;
-        this.controls.maxDistance = size * 3;
-        this.wantedDistance = size * 2.1;
-        this.home.set(size * 1.15, size * 0.95, size * 1.35);
+        const flat = this.mapKind === "world";
+        this.controls.minDistance = size * (flat ? 0.5 : 0.9);
+        this.controls.maxDistance = size * (flat ? 1.8 : 3);
+        this.wantedDistance = size * (flat ? 1.05 : 2.1);
+        if (flat) this.home.set(size * 0.25, size * 0.85, size * 0.6);
+        else this.home.set(size * 1.15, size * 0.95, size * 1.35);
+        this.controls.target.set(0, flat ? this.floorY ?? 0 : 0, 0);
     }
 
     activate() {
         this.camera.up.set(0, 1, 0);
         this.camera.position.copy(this.home);
-        this.controls.target.set(0, 0, 0);
+        this.controls.target.set(0, this.mapKind === "world" ? this.floorY ?? 0 : 0, 0);
+        if (this.mapKind === "world") this.camera.position.y += this.controls.target.y;
         this.controls.enabled = true;
         this.controls.update();
     }
@@ -158,5 +170,54 @@ export class MenuCamera {
         this.camera.up.set(0, 1, 0);
         this.camera.position.copy(this.pos);
         this.camera.lookAt(this.look);
+    }
+}
+
+// Pilote les trois caméras (Snake, dieu, menus) : choix de la caméra active, map, secousses.
+export class CameraController {
+    constructor(camera, canvas, size) {
+        this.camera = camera;
+        this.snake = new SnakeCamera(camera);
+        this.god = new GodCamera(camera, canvas, size);
+        this.menu = new MenuCamera(camera, size);
+        this.mode = "menu"; // "menu" | "god" | "snake"
+    }
+
+    // Map de la partie : le dieu cadre autrement un terrain plat ; `floorY` = hauteur du sol.
+    setMap(kind, arenaSize, floorY = 0) {
+        this.snake.mapKind = kind;
+        this.god.setMap(kind);
+        this.god.floorY = floorY;
+        this.god.setArena(arenaSize);
+    }
+
+    setArena(arenaSize) {
+        this.god.setArena(arenaSize);
+    }
+
+    // Change de caméra. Renvoie la caméra précédente.
+    setMode(next) {
+        const previous = this.mode;
+        if (next === previous) return previous;
+        this.mode = next;
+        if (next === "god") this.god.activate();
+        else this.god.deactivate();
+        if (next === "snake") {
+            this.snake.reset();
+            if (previous === "menu") this.snake.startIntro();
+        }
+        return previous;
+    }
+
+    shake(amount) {
+        if (this.mode === "snake") this.snake.shake(amount);
+        else this.god.shake(amount);
+    }
+
+    // `view` : la vue du Snake du joueur (tête, orientation, arête à venir).
+    update(dt, { view = null, showcase = null } = {}) {
+        if (this.mode === "menu") this.menu.update(dt, showcase);
+        else if (this.mode === "snake" && view) this.snake.update(view.headPos, view.headQuat, dt, view.edge);
+        else this.god.update(dt);
     }
 }

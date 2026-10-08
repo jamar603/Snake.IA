@@ -45,7 +45,6 @@ export class Hud extends EventTarget {
             energyValue: $("energy-value"),
             energyFill: $("energy-fill"),
             powers: $("powers"),
-            layerValue: $("layer-value"),
             axisValue: $("axis-value"),
             intel: $("intel"),
             intelEvent: $("intel-event"),
@@ -54,6 +53,9 @@ export class Hud extends EventTarget {
             vignette: $("vignette"),
             skills: $("skills"),
             godHint: $("god-hint"),
+            layerTool: $("layer-tool"),
+            layerValue: $("layer-value"),
+            godKeys: document.querySelector(".god-tools .hint"),
         };
         this.lastHp = {};
         this.showHelp = true;
@@ -142,7 +144,9 @@ export class Hud extends EventTarget {
         this.el.timer.classList.toggle("unlimited", unlimited);
         this.el.timer.classList.toggle("urgent", !unlimited && secs <= 20 && state.status === "playing");
         const goal = unlimited ? ` · Objectif Snakes : taille ${state.winLength}` : "";
-        this.el.phase.textContent = `Phase ${state.phase} · ${state.phaseName} · ${state.arena.size}³${goal}`;
+        const side = state.arena.size;
+        const mapLabel = { world: `World ${side}×${side}`, volume: `Cube 3D ${side}³` }[state.map?.kind] ?? `Cube ${side}`;
+        this.el.phase.textContent = `Phase ${state.phase} · ${state.phaseName} · ${mapLabel}${goal}`;
         this.el.phase.style.setProperty("--phase", `#${PHASE_COLORS[state.phase].getHexString()}`);
 
         const countdown = state.status === "countdown";
@@ -165,6 +169,11 @@ export class Hud extends EventTarget {
         }
         const mine = state.snakes.find((s) => s.id === this.role);
         if (mine) {
+            // Aide des commandes selon la map (haut / bas seulement dans le Cube 3D).
+            this.el.snakeHelp.textContent =
+                state.map?.kind === "volume"
+                    ? "← → tourner · ↑ ↓ monter / descendre · Espace, E, F : compétences"
+                    : "← → tourner (la face change toute seule) · Espace, E, F : compétences";
             this.#renderEvolution(mine);
             this.#renderSkills(mine);
         }
@@ -224,7 +233,13 @@ export class Hud extends EventTarget {
         this.el.intelFood.textContent = intel.upcomingFood.length;
     }
 
-    renderGodTools({ power, axis, layer, hint }) {
+    renderGodTools({ power, axis, hint, layer, volume }) {
+        // Cube 3D : couche visée et axe libre ; ailleurs : clic direct sur la face.
+        this.el.layerTool.classList.toggle("hidden", !volume);
+        this.el.layerValue.textContent = layer;
+        this.el.godKeys.textContent = volume
+            ? "Clic : poser · ↑ ↓ ou Maj + molette : couche · R : axe"
+            : "Clic sur une face : poser · R : orientation · glisser : tourner";
         for (const id of POWER_IDS) this.powerButtons[id].classList.toggle("selected", id === power);
         // Pouvoir choisi : ce qu'il fait, ou pourquoi il ne peut pas partir ici.
         const help = this.el.godHint;
@@ -233,8 +248,7 @@ export class Hud extends EventTarget {
             help.textContent = bad ? hint.reason : `${POWERS[power].label} : ${POWERS[power].description}`;
             help.classList.toggle("bad", !!bad);
         }
-        this.el.axisValue.textContent = power === "trap" || power === "demolish" ? "—" : axis;
-        this.el.layerValue.textContent = layer;
+        this.el.axisValue.textContent = power === "wall" || (volume && ["rotatingWall", "dangerZone"].includes(power)) ? axis : "—";
     }
 
     // Réactions de l'interface aux événements du tick.

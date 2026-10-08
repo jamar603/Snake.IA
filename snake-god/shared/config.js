@@ -2,22 +2,57 @@
 // Toute la logique de jeu vit sur le serveur ; le client lit ces valeurs
 // uniquement pour l'affichage (coûts, couleurs, taille du cube...).
 
-// Le monde grandit pendant la partie : 7³ -> 9³ -> 11³ -> 13³ (assez de place dès le départ).
-// GRID_SIZE = taille maximale = espace de coordonnées (l'arène y est centrée).
+// Trois maps. CUBE (mode principal) : les Snakes rampent sur les 6 faces d'un cube qui grandit
+// (7 -> 13 cases de côté). CUBE 3D : la version classique, dans le volume du cube.
+// WORLD : grand terrain plat 3D, plus simple à prendre en main.
+// `space` : espace de coordonnées fixe (le monde grandit sans décaler les coordonnées).
+export const MAPS = {
+    cube: {
+        label: "Cube",
+        description: "Rampe sur les 6 faces d'un cube. Le passage d'une face à l'autre est automatique.",
+        sizes: [7, 9, 11, 13],
+        space: 15, // 13 + la couche de surface de chaque côté
+        foodBySize: { 7: 7, 9: 9, 11: 11, 13: 13 },
+        pillarsBySize: { 7: 4, 9: 3, 11: 3, 13: 3 },
+        snakeHp: 2,
+        maxRotatingWalls: 4,
+    },
+    // Version classique : le Snake se déplace DANS le volume du cube (gauche, droite, haut, bas).
+    volume: {
+        label: "Cube 3D",
+        description: "La version classique : vole dans tout le volume du cube, avec haut et bas en plus.",
+        sizes: [7, 9, 11, 13],
+        space: 13,
+        foodBySize: { 7: 6, 9: 7, 11: 8, 13: 10 },
+        pillarsBySize: { 7: 3, 9: 2, 11: 3, 13: 3 },
+        snakeHp: 2,
+        maxRotatingWalls: 4,
+        aiSweepDanger: [40, 3], // prudence des Snakes IA face aux lames (imminente, à venir)
+    },
+    world: {
+        label: "World",
+        description: "Grand terrain plat en 3D, avec reliefs et obstacles. Idéal pour débuter.",
+        sizes: [17, 21, 25, 29],
+        space: 29,
+        foodBySize: { 17: 8, 21: 10, 25: 12, 29: 14 },
+        pillarsBySize: { 17: 10, 21: 6, 25: 6, 29: 6 },
+        snakeHp: 3, // mode accessible : un PV de plus
+        maxRotatingWalls: 3,
+    },
+};
+export const MAP_IDS = Object.keys(MAPS);
+export const DEFAULT_MAP = "cube";
+
+// Croissance du monde (les deux maps) : une expansion se déclenche dès qu'UN critère est
+// atteint pour l'étape suivante, mais jamais avant `minProgress` (montée progressive).
 export const WORLD = {
-    maxSize: 13,
-    sizes: [7, 9, 11, 13],
-    // Une expansion se déclenche dès qu'UN critère est atteint pour l'étape suivante,
-    // mais jamais avant `minProgress` : la montée en puissance reste progressive.
     minProgress: [0.1, 0.3, 0.52], // fraction du temps de partie
     timeThresholds: [0.22, 0.45, 0.7],
     lengthThresholds: [16, 36, 64], // longueur cumulée des Snakes vivants
-    densityThreshold: 0.15, // (murs + corps) / volume de l'arène
+    densityThreshold: 0.15, // (murs + corps) / cellules jouables
     warnMs: 2800, // annonce -> fin de la construction
-    foodBySize: { 7: 6, 9: 7, 11: 8, 13: 10 },
-    pillarsBySize: { 7: 3, 9: 2, 11: 3, 13: 3 }, // piliers ajoutés à chaque taille
 };
-export const GRID_SIZE = WORLD.maxSize;
+export const GRID_SIZE = MAPS.cube.space; // espace du cube (menus, valeur par défaut)
 
 // Durée d'une partie (choisie dans le salon ou en solo). 0 = illimitée : la partie dure
 // jusqu'à ce que le dieu élimine les Snakes, ou qu'un Snake atteigne UNLIMITED.winLength.
@@ -107,10 +142,10 @@ export const POWERS = {
         cost: 45,
         cooldownMs: 8000,
         phase: 2,
-        maxActive: 6,
+        maxActive: 3,
         arm: 2, // cellules de chaque côté du pivot
         rotateEveryMs: 2200,
-        description: "Une barre de 5 cellules qui pivote de 90° autour d'un axe.",
+        description: "Une lame de 5 cases couchée sur la face, qui pivote de 90° et écrase.",
     },
     demolish: {
         label: "Démolition",
@@ -140,6 +175,25 @@ export const POWERS = {
         warnMs: 1000,
         durationMs: 6000,
         description: "Une dalle de 3 × 3 qui brûle (-1 PV) après un court avertissement.",
+    },
+    teleporter: {
+        label: "Téléporteur",
+        key: "7",
+        cost: 25,
+        cooldownMs: 6000,
+        phase: 2,
+        maxActive: 2,
+        lifetimeMs: 18000,
+        description: "Un portail sur la case visée, relié à une sortie au hasard (loin des Snakes, face à une voie libre).",
+    },
+    expand: {
+        label: "Expansion",
+        key: "8",
+        cost: 40,
+        cooldownMs: 20000,
+        phase: 2,
+        needsCell: false,
+        description: "Agrandit le monde tout de suite (nouvelles zones, jamais sur un Snake).",
     },
 };
 

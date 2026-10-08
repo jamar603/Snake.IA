@@ -6,6 +6,7 @@ import { glowTexture, scaleNormalTexture, snakeSkinTextures } from "./textures.j
 const MAX_RINGS = 700;
 const RADIAL = 24;
 const UV_PER_UNIT = 0.9; // u de la peau par unité de longueur (corps et crâne)
+const GAP = 1.8; // au-delà, deux points du chemin ne se touchent pas (téléporteur)
 const easeOut = (t) => 1 - Math.pow(1 - t, 4);
 
 // Bulle du Bouclier : bord lumineux (Fresnel) et alvéoles qui défilent, centre transparent.
@@ -413,26 +414,35 @@ export class SnakeModel {
         this.headQuat = headQuat;
     }
 
+    // Échantillons du corps le long du chemin. Un saut (téléporteur) coupe le corps :
+    // les échantillons du saut sont marqués `gap` et le tube y a un rayon nul.
     #sample() {
         const pts = this.pathPoints;
         const out = this.samples;
         out.length = 0;
+        this.gaps = [];
         if (!pts || pts.length < 2) return;
         const n = pts.length;
+        const far = (a, b) => a.distanceToSquared(b) > GAP * GAP;
         const tmp = new THREE.Vector3();
         for (let j = 0; j < n - 1; j++) {
-            const p0 = pts[Math.max(0, j - 1)];
             const p1 = pts[j];
             const p2 = pts[j + 1];
-            const p3 = pts[Math.min(n - 1, j + 2)];
+            const gap = far(p1, p2);
+            // Pas de courbe à travers un saut : on s'appuie sur le point lui-même.
+            const p0 = j > 0 && !far(pts[j - 1], p1) ? pts[j - 1] : p1;
+            const p3 = j + 2 < n && !far(p2, pts[j + 2]) ? pts[j + 2] : p2;
             for (let k = 0; k < SUBDIV; k++) {
                 if (out.length >= MAX_RINGS - 1) return;
                 const t = k / SUBDIV;
-                catmull(p0, p1, p2, p3, t, tmp);
+                if (gap) tmp.lerpVectors(p1, p2, t);
+                else catmull(p0, p1, p2, p3, t, tmp);
                 out.push(tmp.clone());
+                this.gaps.push(gap && k > 0);
             }
         }
         out.push(pts[n - 1].clone());
+        this.gaps.push(false);
     }
 
     #buildTube() {
@@ -483,7 +493,7 @@ export class SnakeModel {
             let swell = 0;
             for (const bulge of this.bulges) swell += bulge.amp * Math.exp(-((L[i] - bulge.dist) ** 2) / 0.12);
             r *= 1 + Math.min(0.6, swell);
-            r = Math.max(r, 0.03);
+            r = this.gaps?.[i] ? 0 : Math.max(r, 0.03);
 
             // Ondulation latérale (nulle près de la tête pour garder la lisibilité).
             const wave = Math.sin(this.time * 7 - L[i] * 2.4) * 0.07 * smoothstep(0.05, 0.25, s);
@@ -505,7 +515,7 @@ export class SnakeModel {
             }
 
             // Nageoires (palier 2+) et pointes (palier 3+) le long du dos.
-            if (this.tier >= 2 && L[i] >= nextFin && s < 0.85 && fins < FIN_MAX) {
+            if (this.tier >= 2 && L[i] >= nextFin && s < 0.85 && fins < FIN_MAX && !this.gaps?.[i]) {
                 nextFin += finStep;
                 const k = r / R;
                 basisX.copy(T).negate();

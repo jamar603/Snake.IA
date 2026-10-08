@@ -1,10 +1,14 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { worldPieces } from "./assets.js";
+import { CUBE_GAP } from "./coords.js";
 import { glowTexture, moonTexture, runeRingTexture } from "./textures.js";
 
 // Île de blender/build_island.py : socle prévu pour le plus grand cube, entouré
 // d'une bande d'herbe de MARGIN cases où poussent les décors.
 const MARGIN = 2.4;
+const ISLAND_GRID = 13; // taille pour laquelle blender/build_island.py dessine l'île
+const MAX_TILES = 29 * 29; // le plus grand terrain WORLD
 const PROPS = ["TreeTeal", "Pine", "Bush", "TreePink", "Rock", "Lantern", "Crate", "Bush"];
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -185,7 +189,7 @@ export class Environment {
 
         // Dalles : une par cellule du sol, toutes dans un seul InstancedMesh.
         const tile = pieces.Tile;
-        this.tiles = new THREE.InstancedMesh(tile.geometry, tile.material, this.size * this.size);
+        this.tiles = new THREE.InstancedMesh(tile.geometry, tile.material, MAX_TILES);
         this.tiles.receiveShadow = true;
         this.tiles.count = 0;
         this.platform.add(this.tiles);
@@ -218,6 +222,8 @@ export class Environment {
         }
 
         this.templates = pieces;
+        this.terraces = new THREE.Group();
+        this.platform.add(this.terraces);
         this.layoutSize = null;
         this.#layout(this.arenaTarget ?? this.size, false);
     }
@@ -276,6 +282,47 @@ export class Environment {
             }
         }
         this.#updateProps(now);
+        this.#buildTerraces(n);
+    }
+
+    // WORLD : terrasses de pierre et d'herbe aux quatre coins du terrain (relief),
+    // chacune couronnée d'un arbre. Hors du terrain de jeu : purement décoratives.
+    #buildTerraces(n) {
+        this.terraces.clear();
+        if (this.mapKind !== "world") return;
+        this.terraceMats ??= {
+            grass: new THREE.MeshStandardMaterial({ color: 0x2a6e4c, roughness: 0.9 }),
+            stone: new THREE.MeshStandardMaterial({ color: 0x5b5470, roughness: 0.85 }),
+        };
+        const d = n / 2 + 1.6;
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sz], i) => {
+            const levels = 2 + (i % 2);
+            for (let l = 0; l < levels; l++) {
+                const w = 3.2 - l * 0.9;
+                const step = new THREE.Mesh(new RoundedBoxGeometry(w, 0.9, w, 2, 0.15), this.terraceMats.stone);
+                step.position.set(sx * (d + 0.4 - l * 0.25), 0.45 + l * 0.9, sz * (d + 0.4 - l * 0.25));
+                const top = new THREE.Mesh(new RoundedBoxGeometry(w + 0.08, 0.2, w + 0.08, 2, 0.08), this.terraceMats.grass);
+                top.position.copy(step.position).add(new THREE.Vector3(0, 0.5, 0));
+                step.castShadow = step.receiveShadow = top.receiveShadow = true;
+                this.terraces.add(step, top);
+            }
+            const tree = this.templates[["TreeTeal", "Pine", "TreePink", "Pine"][i]].clone();
+            tree.position.set(sx * (d + 0.4 - (levels - 1) * 0.25), levels * 0.9 + 0.1, sz * (d + 0.4 - (levels - 1) * 0.25));
+            this.terraces.add(tree);
+        });
+    }
+
+    // Map de la partie. CUBE : l'île flotte sous le cube. WORLD : l'île est le terrain,
+    // ses dalles sont les cases jouables. `floorY` : hauteur du sol (dessus des dalles).
+    setMap(kind, floorY) {
+        this.mapKind = kind;
+        this.flatFloor = floorY;
+        this.runes.visible = kind !== "world";
+        const r = kind === "world" ? 19 : 11;
+        Object.assign(this.key.shadow.camera, { left: -r, right: r, top: r, bottom: -r, far: 80 });
+        this.key.shadow.camera.updateProjectionMatrix();
+        this.layoutSize = null;
+        if (this.arenaTarget) this.#layout(this.arenaTarget, false);
     }
 
     #flushLeaving() {
@@ -343,14 +390,17 @@ export class Environment {
         if (this.arenaTarget) {
             this.arenaSize ??= this.size;
             this.arenaSize += (this.arenaTarget - this.arenaSize) * (1 - Math.exp(-dt * 3));
-            const k = this.arenaSize / this.size;
+            const k = this.arenaSize / ISLAND_GRID;
             this.platform.children[0].scale.set(k, 1, k);
             this.runes.scale.setScalar(this.island ? k * 0.62 : k);
-            // Avec l'île, le cube repose juste au-dessus des dalles.
-            this.platform.position.y = -this.arenaSize / 2 - (this.island ? 0.12 : 0.9);
+            // CUBE : l'île flotte sous le cube, assez bas pour qu'on joue sur la face du dessous.
+            // WORLD : le dessus des dalles est le sol du terrain.
+            const floor =
+                this.mapKind === "world" ? this.flatFloor : -this.arenaSize / 2 - (this.mapKind === "volume" ? 0.06 : CUBE_GAP);
+            this.platform.position.y = floor - 0.06;
             this.godLight.position.y = this.platform.position.y - 1;
             if (this.island) {
-                const w = (this.arenaSize / 2 + MARGIN) / (this.size / 2 + MARGIN);
+                const w = (this.arenaSize / 2 + MARGIN) / (ISLAND_GRID / 2 + MARGIN);
                 this.island.scale.set(w, 1, w);
             }
         }

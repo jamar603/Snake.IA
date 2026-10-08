@@ -9,6 +9,8 @@ export const POWER_ICONS = {
     demolish: svg(`<path d="M6 26l9-9M13 7l12 12-4 4L9 11z"/><path d="M22 4l6 6"/>`),
     triggerEvent: svg(`<path d="M16 3l3.5 8.5L28 13l-6.5 6 2 9L16 23.5 8.5 28l2-9L4 13l8.5-1.5z"/>`),
     dangerZone: svg(`<path d="M16 4L29 27H3z"/><path d="M16 12v7M16 23v.5"/>`),
+    teleporter: svg(`<ellipse cx="9" cy="16" rx="4" ry="9"/><ellipse cx="23" cy="16" rx="4" ry="9"/><path d="M13 12h6M17 9l3 3-3 3M19 20h-6M15 17l-3 3 3 3"/>`),
+    expand: svg(`<rect x="10" y="10" width="12" height="12" rx="1"/><path d="M4 9V4h5M28 9V4h-5M4 23v5h5M28 23v5h-5M6 6l5 5M26 6l-5 5M6 26l5-5M26 26l-5-5"/>`),
 };
 
 // Icônes des compétences des Snakes.

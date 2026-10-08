@@ -1,46 +1,40 @@
 import {
     COUNTDOWN_SECONDS,
+    DEFAULT_MAP,
     FOOD_COUNT,
-    GRID_SIZE,
+    MAPS,
     MATCH_SECONDS,
     PHASES,
     SKILLS,
-    STARTING_PILLARS,
     UNLIMITED,
     UPCOMING_FOOD_PREVIEW,
-    WORLD,
     WORLD_EVENTS,
 } from "../shared/config.js";
 import { DEFAULT_COSMETICS, evolutionFor, sanitizeCosmetics } from "../shared/cosmetics.js";
-import { AXES, add, chebyshev, cross, equals, inBounds, key } from "../shared/grid.js";
+import { AXES, chebyshev, equals, key, neg } from "../shared/grid.js";
 import { MATCH_STATUS } from "../shared/protocol.js";
 import { GodAI } from "./ai/GodAI.js";
 import { Navigation } from "./ai/Navigation.js";
 import { SnakeAI } from "./ai/SnakeAI.js";
+import { DynamicWorldManager } from "./DynamicWorldManager.js";
 import { FoodSystem } from "./FoodSystem.js";
 import { GodPowerSystem } from "./GodPowerSystem.js";
+import { MapManager } from "./MapManager.js";
 import { ScoreManager } from "./ScoreManager.js";
 import { SnakeController } from "./SnakeController.js";
+import { TeleporterSystem } from "./TeleporterSystem.js";
 import { TrapSystem } from "./TrapSystem.js";
 import { WallSystem } from "./WallSystem.js";
 import { WorldEventSystem } from "./WorldEventSystem.js";
-import { WorldExpansionSystem } from "./WorldExpansionSystem.js";
-import { WorldGrid } from "./WorldGrid.js";
 import { ZoneSystem } from "./ZoneSystem.js";
-
-const DIRECTIONS = [
-    [1, 0, 0], [-1, 0, 0],
-    [0, 1, 0], [0, -1, 0],
-    [0, 0, 1], [0, 0, -1],
-];
 
 // Règles d'une partie : cycle de vie, tick de simulation, collisions, victoire.
 // Ne connaît rien du réseau : MultiplayerManager l'appelle et diffuse snapshot().
 export class GameManager {
     constructor({
         rng = Math.random,
-        size = GRID_SIZE, // espace de coordonnées = taille maximale du monde
-        startSize = Math.min(size, WORLD.sizes[0]),
+        map = DEFAULT_MAP, // "cube" (mode principal) ou "world" (terrain plat)
+        startSize = null, // taille de départ (sinon la première de la map)
         expansion = true,
         matchSeconds = MATCH_SECONDS,
         countdownSeconds = COUNTDOWN_SECONDS,
@@ -48,13 +42,29 @@ export class GameManager {
     } = {}) {
         this.rng = rng;
         this.worldEventsEnabled = worldEvents;
-        this.size = size;
-        this.sizes = [startSize, ...WORLD.sizes.filter((s) => s > startSize && s <= size)];
+        this.startSize = startSize;
+        this.setMap(map);
         this.expansionEnabled = expansion;
         this.setDuration(matchSeconds);
         this.countdownMs = countdownSeconds * 1000;
         this.status = MATCH_STATUS.LOBBY;
         this.summary = null;
+    }
+
+    // Map de la prochaine partie : "cube" ou "world".
+    setMap(kind) {
+        this.mapKind = MAPS[kind] ? kind : DEFAULT_MAP;
+        const all = MAPS[this.mapKind].sizes;
+        const start = this.startSize && all.includes(this.startSize) ? this.startSize : all[0];
+        this.sizes = all.filter((s) => s >= start);
+    }
+
+    get mapConfig() {
+        return MAPS[this.mapKind];
+    }
+
+    get size() {
+        return this.grid?.space ?? this.mapConfig.space;
     }
 
     // Durée de la partie en secondes ; 0 (ou null) = illimitée.
@@ -85,11 +95,12 @@ export class GameManager {
             if (v) roster[role] = typeof v === "string" ? { name: v, ai: false } : v;
         }
         this.aiRoles = new Set(Object.keys(roster).filter((r) => roster[r].ai));
-        this.grid = new WorldGrid(this.size, this.rng, this.sizes[0]);
-        this.expansion = new WorldExpansionSystem(this.sizes, { enabled: this.expansionEnabled });
+        this.grid = new MapManager(this.mapKind, this.rng, this.sizes[0]);
+        this.expansion = new DynamicWorldManager(this.sizes, { enabled: this.expansionEnabled });
         this.walls = new WallSystem();
         this.traps = new TrapSystem();
-        this.food = new FoodSystem(this.grid, WORLD.foodBySize[this.sizes[0]] ?? FOOD_COUNT, UPCOMING_FOOD_PREVIEW);
+        this.teleporters = new TeleporterSystem();
+        this.food = new FoodSystem(this.grid, this.mapConfig.foodBySize[this.sizes[0]] ?? FOOD_COUNT, UPCOMING_FOOD_PREVIEW);
         this.zones = new ZoneSystem();
         this.worldEvents = new WorldEventSystem({ grid: this.grid, food: this.food, zones: this.zones, rng: this.rng });
         this.scores = new ScoreManager();
@@ -106,21 +117,16 @@ export class GameManager {
         this.grid.addOccupant((k) => this.walls.isWall(k));
         this.grid.addOccupant((k) => this.traps.has(k));
         this.grid.addOccupant((k) => this.food.has(k));
+        this.grid.addOccupant((k) => this.teleporters.has(k));
         this.grid.addOccupant((k) => this.snakes.some((s) => s.body.some((c) => key(c) === k)));
 
-        // Couloirs différents : pas de choc frontal dès le départ.
-        const a = this.grid.arena;
-        const lo = a.min + 1;
-        const hi = a.max - 1;
-        const spawns = {
-            snake1: { cell: [a.min, lo, lo], dir: [1, 0, 0] },
-            snake2: { cell: [a.max, hi, hi], dir: [-1, 0, 0] },
-        };
+        // Départs éloignés (faces opposées du cube, coins opposés du terrain).
+        const spawns = this.grid.map.spawnPoints();
         for (const id of ["snake1", "snake2"]) {
             if (!roster[id]) continue;
-            const s = new SnakeController(id, roster[id].name);
+            const s = new SnakeController(id, roster[id].name, this.mapConfig.snakeHp);
             s.cosmetics = sanitizeCosmetics(roster[id].cosmetics, DEFAULT_COSMETICS[id]);
-            s.spawn(spawns[id].cell, spawns[id].dir, [0, 1, 0]);
+            s.spawn(spawns[id].cell, spawns[id].dir, spawns[id].up);
             this.snakes.push(s);
         }
 
@@ -130,33 +136,62 @@ export class GameManager {
             traps: this.traps,
             zones: this.zones,
             events: this.worldEvents,
+            teleporters: this.teleporters,
+            maxRotatingWalls: this.mapConfig.maxRotatingWalls,
             snakes: () => this.snakes,
+            canExpand: () => this.expansionEnabled && !this.expansion.isMax && !this.expansion.pending,
+            expand: (now) => this.#announceExpansion(this.expansion.force(now)),
         });
 
         this.snakeAIs = new Map(this.snakes.map((s) => [s.id, new SnakeAI(s, this.rng)]));
         this.godAI = roster.god ? new GodAI(this, this.rng) : null;
 
-        this.#placePillars(WORLD.pillarsBySize[this.sizes[0]] ?? STARTING_PILLARS);
+        this.#placePillars(this.mapConfig.pillarsBySize[this.sizes[0]] ?? 0);
         this.food.refill(this.snakes.map((s) => s.head));
         if (this.worldEventsEnabled) this.worldEvents.schedule(0);
         this.status = this.countdownMs > 0 ? MATCH_STATUS.COUNTDOWN : MATCH_STATUS.PLAYING;
     }
 
-    // Piliers de cristal ; `outside` : seulement hors de cette ancienne arène (nouvelles zones).
-    #placePillars(count, outside = null) {
-        const heads = this.snakes.filter((s) => s.alive && s.body.length).map((s) => s.head);
+    // Obstacles fixes : cristaux (CUBE) ou rochers et ruines de 1 à 3 cases (WORLD).
+    // `among` : seulement parmi ces cellules (les nouvelles zones d'une expansion).
+    // Jamais à moins de 3 cases d'une tête, ni devant elle.
+    #placePillars(count, among = null) {
+        const heads = this.snakes.filter((s) => s.alive && s.body.length);
+        const allowed = among && new Set(among.map(key));
+        const safe = (c) =>
+            this.grid.isFree(c) &&
+            heads.every((s) => chebyshev(c, s.head) > 2 && !this.grid.map.ray(s.head, s.dir, 4).some((r) => key(r) === key(c))) &&
+            (!allowed || allowed.has(key(c)));
         const placed = [];
         for (let i = 0; i < count; i++) {
-            const base = this.grid.findFreeCell(
-                (c) => heads.every((h) => chebyshev(c, h) > 2) && (!outside || !inBounds(c, outside))
-            );
+            const base = this.grid.findFreeCell(safe, among ? 800 : 400);
             if (!base) break;
-            const top = add(base, [0, 1, 0]);
-            const cells = this.grid.isFree(top) ? [base, top] : [base];
+            let cells = [base];
+            if (this.grid.kind === "volume") {
+                // Colonne de cristal de 2 cases, comme dans la version classique.
+                const top = [base[0], base[1] + 1, base[2]];
+                if (safe(top)) cells.push(top);
+            } else if (this.grid.kind === "world") {
+                // Ruine : un petit mur couché sur le terrain.
+                const axis = AXES[this.rng() < 0.5 ? "x" : "z"];
+                const len = 1 + Math.floor(this.rng() * 3);
+                for (let k = 1; k < len; k++) {
+                    const next = this.grid.map.step(cells.at(-1), axis).cell;
+                    if (!safe(next)) break;
+                    cells.push(next);
+                }
+            }
             this.walls.addStatic(cells, { kind: "pillar" });
             placed.push(...cells);
         }
         return placed;
+    }
+
+    #announceExpansion(ev) {
+        if (ev?.type === "start") {
+            this.events.push({ type: "expansionStart", fromSize: ev.fromSize, toSize: ev.toSize, inMs: ev.inMs, reason: ev.reason });
+        }
+        return ev;
     }
 
     // Le monde grandit avec le temps, la taille des Snakes et sa densité.
@@ -166,14 +201,11 @@ export class GameManager {
         const density = (this.walls.cellIndex.size + totalLength) / this.grid.volume;
         const ev = this.expansion.update(this.now, { progress: this.now / this.pacingMs, totalLength, density });
         if (!ev) return;
-        if (ev.type === "start") {
-            this.events.push({ type: "expansionStart", fromSize: ev.fromSize, toSize: ev.toSize, inMs: ev.inMs, reason: ev.reason });
-            return;
-        }
-        const before = this.grid.arena;
-        this.grid.setArenaSize(ev.toSize);
-        this.food.count = WORLD.foodBySize[ev.toSize] ?? this.food.count;
-        const pillars = this.#placePillars(WORLD.pillarsBySize[ev.toSize] ?? 0, before);
+        if (ev.type === "start") return this.#announceExpansion(ev);
+        // Tout glisse avec la surface (CUBE) ou le terrain s'étend (WORLD) : jamais sur un Snake.
+        const fresh = this.expansion.apply(this, ev.toSize);
+        this.food.count = this.mapConfig.foodBySize[ev.toSize] ?? this.food.count;
+        const pillars = this.#placePillars(this.mapConfig.pillarsBySize[ev.toSize] ?? 0, fresh);
         this.events.push({ type: "expansionComplete", fromSize: ev.fromSize, toSize: ev.toSize, cells: pillars });
     }
 
@@ -209,6 +241,8 @@ export class GameManager {
 
     handleTurn(role, turn) {
         const snake = this.getSnake(role);
+        // Haut / bas : seulement dans le volume du Cube 3D.
+        if ((turn === "up" || turn === "down") && this.grid?.kind !== "volume") return;
         if (snake?.alive && this.status !== MATCH_STATUS.ENDED) snake.queueTurn(turn);
     }
 
@@ -260,14 +294,21 @@ export class GameManager {
         if (this.phase.id !== previousPhase) this.events.push({ type: "phase", phase: this.phase.id });
 
         this.god.regenerate(dtMs, this.phase.energyPerSec * this.energyBoost);
-        if (this.godAI && this.isAi("god")) this.godAI.update(new Navigation(this));
+        // La vue de navigation du dieu IA n'est construite que lorsqu'il va agir.
+        if (this.godAI && this.isAi("god") && this.now >= this.godAI.nextActionAt) this.godAI.update(new Navigation(this));
         this.#updateWalls();
+        this.#updateTeleporters();
         this.#updateWorld();
         this.#updateExpansion();
         this.#moveSnakes();
         this.food.refill(this.snakes.filter((s) => s.alive).map((s) => s.head));
         this.#checkEnd();
         return this.events;
+    }
+
+    #updateTeleporters() {
+        const closed = this.teleporters.update(this.now);
+        if (closed.length) this.events.push({ type: "teleporterClosed", cells: closed });
     }
 
     #updateWalls() {
@@ -335,7 +376,11 @@ export class GameManager {
             for (const c of cells) occupancy.set(key(c), (occupancy.get(key(c)) ?? 0) + 1);
         }
 
-        const plans = movers.filter((s) => s.alive).map((s) => ({ snake: s, next: s.nextHead(), hit: null }));
+        // Prochaine case : la map gère le passage d'une face à l'autre (direction et normale).
+        const plans = movers.filter((s) => s.alive).map((s) => {
+            const move = this.grid.map.step(s.head, s.dir);
+            return { snake: s, next: move.cell, move, hit: null };
+        });
         for (const p of plans) {
             const k = key(p.next);
             const phasing = this.#phasing(p.snake);
@@ -363,6 +408,9 @@ export class GameManager {
                 continue;
             }
             s.advance(p.next);
+            s.dir = p.move.dir;
+            s.up = p.move.normal ?? s.up; // Cube 3D : le Snake garde son propre « haut »
+            this.#teleport(s);
             if (!s.health.isInvulnerable(this.now) && !this.#phasing(s) && this.traps.trigger(s.head)) {
                 s.trapsTriggered++;
                 this.events.push({ type: "trapTriggered", cells: [s.head], snake: s.id });
@@ -384,6 +432,36 @@ export class GameManager {
                 if (tier.tier > tierBefore) this.events.push({ type: "evolved", snake: s.id, tier: tier.tier, name: tier.name, cells: [s.head] });
             }
         }
+    }
+
+    // Portail : la tête ressort par l'autre bout, face à une voie libre si sa direction
+    // ne colle pas à la face de sortie. Un portail dont la sortie est occupée ne marche pas.
+    #teleport(s) {
+        const entry = s.head;
+        const exit = this.teleporters.exitFor(entry);
+        if (!exit) return;
+        const k = key(exit);
+        if (this.walls.isWall(k) || this.snakes.some((o) => o.body.some((c) => key(c) === k))) return;
+        const map = this.grid.map;
+        s.body[0] = exit;
+        if (map.kind !== "volume") {
+            const normal = map.normalAt(exit);
+            if (s.dir.some((v, i) => v * normal[i] !== 0)) s.dir = this.#bestDir(exit);
+            s.up = normal;
+        }
+        this.events.push({ type: "teleported", cells: [entry, exit], snake: s.id });
+    }
+
+    // Direction tangente avec la plus longue voie libre depuis `cell`.
+    #bestDir(cell) {
+        let best = null;
+        for (const a of this.grid.map.tangentAxes(cell)) {
+            for (const d of [AXES[a], neg(AXES[a])]) {
+                const run = this.grid.freeRun(cell, d);
+                if (!best || run > best.run) best = { dir: d, run };
+            }
+        }
+        return best.dir;
     }
 
     // Choc qui bloque le Snake : dégât (si pas invulnérable) puis réapparition ailleurs.
@@ -421,26 +499,16 @@ export class GameManager {
         for (let i = 0; i < 60; i++) {
             const cell = this.grid.findFreeCell((c) => others.every((h) => chebyshev(c, h) >= 3));
             if (!cell) break;
-            for (const dir of DIRECTIONS) {
-                const run = this.#freeRun(cell, dir);
-                if (!best || run > best.run) best = { cell, dir, run };
-            }
+            const dir = this.#bestDir(cell);
+            const run = this.grid.freeRun(cell, dir);
+            if (!best || run > best.run) best = { cell, dir, run };
             if (best.run >= 4) break;
         }
-        const cell = best?.cell ?? this.grid.findFreeCell() ?? [0, 0, 0];
-        const dir = best?.dir ?? [1, 0, 0];
-        snake.spawn(cell, dir, perpendicular(dir), length);
+        const cell = best?.cell ?? this.grid.findFreeCell() ?? this.grid.randomCell();
+        const dir = best?.dir ?? this.#bestDir(cell);
+        const up = this.grid.kind === "volume" ? perpendicular(dir) : this.grid.map.normalAt(cell);
+        snake.spawn(cell, dir, up, length);
         this.events.push({ type: "respawn", cells: [cell], snake: snake.id });
-    }
-
-    #freeRun(cell, dir) {
-        let run = 0;
-        let c = add(cell, dir);
-        while (run < this.size && this.grid.isFree(c)) {
-            run++;
-            c = add(c, dir);
-        }
-        return run;
     }
 
     #checkEnd() {
@@ -487,7 +555,8 @@ export class GameManager {
             winLength: this.unlimited ? UNLIMITED.winLength : null,
             elapsedMs: this.now,
             countdownMs: Math.max(0, this.countdownLeft),
-            size: this.size,
+            size: this.size, // espace de coordonnées de la map
+            map: this.grid.describe(), // { kind, space, arenaSize } : le client recrée la topologie
             arena: this.grid.arena,
             expansion: this.expansion.snapshot(this.now),
             snakes: this.snakes.map((s) => ({ ...s.snapshot(this.now), ai: this.isAi(s.id) })),
@@ -495,13 +564,14 @@ export class GameManager {
             traps: this.traps.snapshot(),
             food: this.food.items(),
             zones: this.zones.snapshot(this.now),
+            teleporters: this.teleporters.snapshot(this.now),
             god: { name: this.godName, ai: this.isAi("god"), score: this.scores.god.score, ...this.god.snapshot(this.now, phase.id) },
             events: this.events,
         };
     }
 }
 
+// Un « haut » perpendiculaire à dir (Cube 3D : orientation après une réapparition).
 function perpendicular(dir) {
-    const candidate = dir[1] === 0 ? AXES.y : AXES.x;
-    return cross(cross(dir, candidate), dir);
+    return dir[1] === 0 ? [0, 1, 0] : [1, 0, 0];
 }

@@ -1,5 +1,5 @@
 import { WORLD_EVENTS } from "../shared/config.js";
-import { add, chebyshev } from "../shared/grid.js";
+import { key } from "../shared/grid.js";
 
 const TYPES = ["goldenFruit", "foodRain", "meteorShower"];
 
@@ -24,13 +24,20 @@ export class WorldEventSystem {
     #pickCells(type) {
         if (type === "goldenFruit") return [this.grid.findFreeCell() ?? [0, 0, 0]];
         if (type === "foodRain") {
-            const center = this.grid.findFreeCell() ?? [4, 4, 4];
-            const cells = [];
-            for (let i = 0; i < 40 && cells.length < WORLD_EVENTS.foodRain.count; i++) {
-                const c = add(center, [-2, -2, -2].map((v) => v + Math.floor(this.rng() * 5)));
-                if (this.grid.inBounds(c) && !cells.some((o) => chebyshev(o, c) === 0)) cells.push(c);
+            // Autour d'un point : les cases à 2 pas au plus (en suivant la surface).
+            const center = this.grid.findFreeCell() ?? this.grid.randomCell();
+            const near = new Map([[key(center), center]]);
+            let ring = [center];
+            for (let d = 0; d < 2; d++) {
+                ring = ring.flatMap((c) => this.grid.map.neighbors(c)).filter((c) => !near.has(key(c)));
+                for (const c of ring) near.set(key(c), c);
             }
-            return cells;
+            const cells = [...near.values()];
+            for (let i = cells.length - 1; i > 0; i--) {
+                const j = Math.floor(this.rng() * (i + 1));
+                [cells[i], cells[j]] = [cells[j], cells[i]];
+            }
+            return cells.slice(0, WORLD_EVENTS.foodRain.count);
         }
         const cells = [];
         while (cells.length < WORLD_EVENTS.meteorShower.count) cells.push(this.grid.randomCell());
@@ -61,6 +68,10 @@ export class WorldEventSystem {
         this.history++;
         this.schedule(now);
         return ev;
+    }
+
+    remap(move) {
+        if (this.next) this.next.cells = this.next.cells.map(move);
     }
 
     // Information exclusive du Snake God.

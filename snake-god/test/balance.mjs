@@ -1,5 +1,5 @@
 // Simulation d'équilibrage : parties complètes IA contre IA, sans réseau.
-// Usage : node test/balance.mjs [nombre de parties] [durée en s, 0 = illimitée]
+// Usage : node test/balance.mjs [nombre de parties] [durée en s, 0 = illimitée] [cube | world]
 import { MATCH_STATUS } from "../shared/protocol.js";
 import { GameManager } from "../server/GameManager.js";
 
@@ -10,11 +10,12 @@ function seeded(seed) {
 
 const games = Number(process.argv[2]) || 40;
 const duration = process.argv[3] != null ? Number(process.argv[3]) : undefined;
+const map = process.argv[4] ?? "cube";
 const AI = (name) => ({ name, ai: true });
 const stats = { god: 0, snakes: 0, endMs: 0, damage: 0, survivors: 0, length: 0, power: {}, cause: {} };
 
 for (let seed = 1; seed <= games; seed++) {
-    const game = new GameManager({ rng: seeded(seed * 97), countdownSeconds: 0, matchSeconds: duration });
+    const game = new GameManager({ rng: seeded(seed * 97), countdownSeconds: 0, matchSeconds: duration, map });
     game.startMatch({ snake1: AI("A"), snake2: AI("B"), god: AI("G") });
     let t = 0;
     while (game.status !== MATCH_STATUS.ENDED && t < 400000) {
@@ -34,7 +35,7 @@ for (let seed = 1; seed <= games; seed++) {
 }
 
 const avg = (v) => (v / games).toFixed(1);
-console.log(`${games} parties`);
+console.log(`${games} parties (${map})`);
 console.log(`Victoires dieu ${stats.god} (${Math.round((stats.god / games) * 100)} %), Snakes ${stats.snakes}`);
 console.log(`Durée moyenne ${avg(stats.endMs / 1000)} s, dégâts du dieu ${avg(stats.damage)}, survivants ${avg(stats.survivors)}, longueur ${avg(stats.length)}`);
 console.log("Pouvoirs / partie :", Object.fromEntries(Object.entries(stats.power).map(([k, v]) => [k, avg(v)])));
