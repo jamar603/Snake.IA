@@ -1,128 +1,126 @@
-import { distortion, fm, midi, noise, supersaw, swell, tone, vary } from "../synth.js";
+import { chime, fm, mallet, midi, noise, penta, pluck, pop, swell, tone, vary, wood } from "../synth.js";
 import { braam } from "./god.js";
 
 // Sons du monde : expansion du cube, phases, événements, compte à rebours, fin de partie.
+// Ton général : jeu de plateau magique, plus « boîte à musique » que film catastrophe.
 export const WorldSounds = {
-    // Expansion, étapes 1 et 2 : montée de tension et pulsations d'activation qui accélèrent.
+    // Expansion, étapes 1 et 2 : glissando de harpe qui accélère et monte.
     expansionRise(ctx, out, t, { duration = 2.8 } = {}) {
-        swell(ctx, out, t, { duration: duration * 0.95, freq: 150, freqEnd: 6000, gain: 0.2 });
-        supersaw(ctx, out, t, { freq: midi(45), voices: 5, attack: duration * 0.9, release: 0.1, gain: 0.06, filter: { type: "lowpass", freq: 300, freqEnd: 5000 } });
-        tone(ctx, out, t, { type: "sawtooth", freq: midi(33), freqEnd: midi(45), attack: duration * 0.9, release: 0.1, gain: 0.06, filter: { type: "lowpass", freq: 400 } });
-        let at = t + 0.3;
-        let gap = 0.34;
-        let n = 69;
+        swell(ctx, out, t, { duration: duration * 0.95, freq: 300, freqEnd: 4000, gain: 0.08 });
+        tone(ctx, out, t, { type: "triangle", freq: midi(48), freqEnd: midi(60), attack: duration * 0.9, release: 0.1, gain: 0.05, filter: { type: "lowpass", freq: 1200 } });
+        let at = t + 0.2;
+        let gap = 0.3;
+        let step = 0;
         while (at < t + duration - 0.1) {
-            fm(ctx, out, at, { freq: midi(n), ratio: 2, index: 2, release: 0.06, gain: 0.05, pan: Math.sin(at * 9) * 0.6 });
+            pluck(ctx, out, at, { freq: midi(penta(60, step)), release: 0.3, gain: 0.06, pan: Math.sin(at * 9) * 0.6 });
             at += gap;
-            gap = Math.max(0.055, gap * 0.82);
-            n = Math.min(93, n + 1);
+            gap = Math.max(0.05, gap * 0.85);
+            step = Math.min(14, step + 1);
         }
     },
 
-    // Étape 3 : construction des cellules (grains numériques dispersés en stéréo).
+    // Étape 3 : construction des cellules (petits « tocs » et tintements dispersés).
     construction(ctx, out, t, { duration = 1.6 } = {}) {
-        for (let i = 0; i < 34; i++) {
+        for (let i = 0; i < 26; i++) {
             const at = t + Math.random() * duration;
-            fm(ctx, out, at, { freq: vary(midi(84 + Math.floor(Math.random() * 12)), 0.02), ratio: 2.5, index: 2, release: 0.06, gain: 0.035, pan: Math.random() * 2 - 1 });
-            noise(ctx, out, at, { filterType: "highpass", freq: 6000, release: 0.015, gain: 0.03, pan: Math.random() * 2 - 1 });
+            if (i % 3) wood(ctx, out, at, { freq: vary(1100, 0.3), gain: 0.04, pan: Math.random() * 2 - 1 });
+            else mallet(ctx, out, at, { freq: midi(penta(72, Math.floor(Math.random() * 8))), ratio: 5.4, release: 0.2, gain: 0.035, pan: Math.random() * 2 - 1 });
         }
     },
 
-    // Étape 4 : impact final, tout le cube résonne (braam + sub + cymbale).
+    // Étape 4 : le monde a grandi (gong doux + accord lumineux).
     expansionImpact(ctx, out, t) {
-        braam(ctx, out, t, { root: 33, duration: 2.2, gain: 0.08 });
-        const drive = distortion(ctx, 8);
-        drive.connect(out);
-        tone(ctx, drive, t, { type: "sine", freq: 60, freqEnd: 28, release: 1.8, gain: 0.26 });
-        noise(ctx, out, t, { filterType: "highpass", freq: 4500, freqEnd: 2500, release: 2.2, gain: 0.1 });
-        noise(ctx, out, t, { filterType: "lowpass", freq: 2000, freqEnd: 60, release: 1.2, gain: 0.25 });
+        fm(ctx, out, t, { freq: midi(43), ratio: 1.41, index: 3, indexEnd: 0.1, release: 2.4, gain: 0.12 });
+        for (const n of [60, 64, 67, 71, 74]) pluck(ctx, out, t, { freq: midi(n), release: 1.6, gain: 0.05, cutoff: 3500 });
+        tone(ctx, out, t, { type: "sine", freq: 70, freqEnd: 45, release: 1.2, gain: 0.25 });
+        chime(ctx, out, t + 0.1, { freq: midi(96), release: 1.8, gain: 0.04 });
     },
 
-    // Changement de phase : braam plus ou moins sombre selon la phase.
+    // Changement de phase : accord qui change de couleur, plus grave à chaque phase.
     phase(ctx, out, t, { phase = 2 } = {}) {
-        const root = [0, 33, 33, 32, 31][phase] ?? 33;
-        swell(ctx, out, t, { duration: 0.4, freq: 300, freqEnd: 4000, gain: 0.1 });
-        braam(ctx, out, t + 0.4, { root, duration: 1.8, gain: 0.07 + phase * 0.01 });
-        tone(ctx, out, t + 0.4, { type: "sine", freq: midi(root), release: 1.6, gain: 0.3 });
+        const root = [0, 48, 46, 45, 43][phase] ?? 48;
+        swell(ctx, out, t, { duration: 0.35, freq: 400, freqEnd: 3000, gain: 0.06 });
+        braam(ctx, out, t + 0.35, { root: root - 12, duration: 1.4, gain: 0.04 + phase * 0.008 });
+        for (const n of [0, 7, 12, 16]) pluck(ctx, out, t + 0.35, { freq: midi(root + n), release: 1.4, gain: 0.05 });
     },
 
-    // Météore : sifflement qui tombe.
+    // Météore : sifflement de dessin animé qui tombe.
     meteorFall(ctx, out, t, { duration = 1.4 } = {}) {
-        tone(ctx, out, t, { type: "sine", freq: 2800, freqEnd: 250, attack: duration * 0.85, release: 0.15, gain: 0.08, vibrato: 30 });
-        noise(ctx, out, t, { filterType: "bandpass", freq: 5000, freqEnd: 400, q: 4, attack: duration * 0.85, release: 0.15, gain: 0.09 });
+        tone(ctx, out, t, { type: "sine", freq: 2200, freqEnd: 300, attack: duration * 0.85, release: 0.12, gain: 0.07, vibrato: 25 });
     },
 
-    // Explosion : boum grave, souffle et crépitements.
+    // Explosion : « boum » feutré et rond.
     explosion(ctx, out, t) {
-        const drive = distortion(ctx, 12);
-        drive.connect(out);
-        tone(ctx, drive, t, { type: "sine", freq: vary(85), freqEnd: 28, release: 0.8, gain: 0.28 });
-        noise(ctx, out, t, { filterType: "lowpass", freq: vary(4000, 0.2), freqEnd: 90, release: 0.9, gain: 0.4 });
-        for (let i = 0; i < 6; i++) noise(ctx, out, t + 0.05 + Math.random() * 0.5, { filterType: "highpass", freq: 3000, release: 0.02, gain: 0.06, pan: Math.random() * 2 - 1 });
+        tone(ctx, out, t, { type: "sine", freq: vary(110), freqEnd: 38, release: 0.6, gain: 0.3 });
+        noise(ctx, out, t, { filterType: "lowpass", freq: vary(2400, 0.2), freqEnd: 120, release: 0.6, gain: 0.28 });
+        for (let i = 0; i < 4; i++) wood(ctx, out, t + 0.08 + Math.random() * 0.35, { freq: vary(500, 0.4), gain: 0.05, pan: Math.random() * 2 - 1 });
     },
 
-    // Zone qui brûle : grésillement électrique.
+    // Zone qui brûle : grésillement doux.
     burn(ctx, out, t) {
-        noise(ctx, out, t, { filterType: "bandpass", freq: 2800, q: 0.7, attack: 0.04, hold: 0.3, release: 0.35, gain: 0.12 });
-        fm(ctx, out, t, { freq: 110, ratio: 7.1, index: 4, attack: 0.04, hold: 0.25, release: 0.3, gain: 0.04 });
+        noise(ctx, out, t, { filterType: "bandpass", freq: 3000, q: 0.8, attack: 0.04, hold: 0.25, release: 0.3, gain: 0.08 });
+        for (let i = 0; i < 5; i++) noise(ctx, out, t + Math.random() * 0.5, { filterType: "highpass", freq: 5000, release: 0.015, gain: 0.05, pan: Math.random() - 0.5 });
     },
 
+    // Fruit doré annoncé : boîte à musique.
     goldenFruit(ctx, out, t) {
-        for (const [i, n] of [79, 83, 86, 91].entries()) fm(ctx, out, t + i * 0.11, { freq: midi(n), ratio: 3.5, index: 3, release: 1, gain: 0.07, pan: (i - 1.5) * 0.4 });
+        [4, 5, 7, 9].forEach((s, i) => mallet(ctx, out, t + i * 0.1, { freq: midi(penta(72, s)), ratio: 5.4, release: 0.8, gain: 0.07, pan: (i - 1.5) * 0.4 }));
     },
 
+    // Pluie de nourriture : gouttes qui rebondissent.
     foodRain(ctx, out, t) {
         for (let i = 0; i < 10; i++) {
-            fm(ctx, out, t + Math.random() * 0.8, { freq: vary(midi(76 + Math.floor(Math.random() * 10)), 0.02), ratio: 2, index: 1.5, release: 0.12, gain: 0.05, pan: Math.random() * 2 - 1 });
+            pop(ctx, out, t + Math.random() * 0.8, { freq: midi(penta(72, Math.floor(Math.random() * 8))), to: 1.5, release: 0.08, gain: 0.06, pan: Math.random() * 2 - 1 });
         }
     },
 
-    // Compte à rebours : bips synthétiques, "go" = accord supersaw + basse.
+    // Compte à rebours : blocs de bois ; « go » = accord joyeux.
     countdown(ctx, out, t, { go = false } = {}) {
         if (!go) {
-            fm(ctx, out, t, { freq: midi(69), ratio: 2, index: 1.5, release: 0.18, gain: 0.1 });
+            wood(ctx, out, t, { freq: 880, gain: 0.16 });
             return;
         }
-        for (const n of [57, 64, 69, 72]) supersaw(ctx, out, t, { freq: midi(n), voices: 5, release: 0.8, gain: 0.06, filter: { type: "lowpass", freq: 6000, freqEnd: 1500 } });
-        tone(ctx, out, t, { type: "sine", freq: midi(33), release: 0.9, gain: 0.35 });
+        for (const n of [60, 64, 67, 72]) pluck(ctx, out, t, { freq: midi(n), release: 0.7, gain: 0.08, cutoff: 4000 });
+        mallet(ctx, out, t, { freq: midi(84), ratio: 4, release: 0.5, gain: 0.1 });
+        tone(ctx, out, t, { type: "sine", freq: midi(36), release: 0.5, gain: 0.25 });
     },
 
-    // Fin du timer : cloche FM.
+    // Fin du timer : cloche.
     timeUp(ctx, out, t) {
-        fm(ctx, out, t, { freq: midi(69), ratio: 3.5, index: 5, indexEnd: 0.2, release: 2.2, gain: 0.15 });
-        fm(ctx, out, t, { freq: midi(57), ratio: 2, index: 2, release: 2, gain: 0.08 });
+        chime(ctx, out, t, { freq: midi(81), release: 2, gain: 0.1 });
+        fm(ctx, out, t, { freq: midi(57), ratio: 2, index: 1.5, release: 1.6, gain: 0.06 });
     },
 
-    // Victoire des Snakes : fanfare synthwave (accords supersaw en montée).
+    // Victoire des Snakes : petite fanfare enjouée (marimba + accords).
     victorySnake(ctx, out, t) {
-        const chords = [[57, 60, 64], [53, 57, 60], [55, 59, 62], [57, 61, 64, 69]];
-        chords.forEach((c, i) => {
-            const at = t + i * 0.28;
-            const last = i === chords.length - 1;
-            for (const n of c) supersaw(ctx, out, at, { freq: midi(n), voices: 5, hold: last ? 0.8 : 0.12, release: last ? 1.5 : 0.15, gain: 0.06, filter: { type: "lowpass", freq: 5000, freqEnd: 1500 } });
-            tone(ctx, out, at, { type: "sine", freq: midi(c[0] - 24), release: last ? 1.6 : 0.25, gain: 0.25 });
+        const melody = [[0, 0], [2, 0.12], [4, 0.24], [7, 0.36], [4, 0.5], [7, 0.62], [12, 0.78]];
+        for (const [n, d] of melody) mallet(ctx, out, t + d, { freq: midi(72 + n), ratio: 4, release: n === 12 ? 1 : 0.25, gain: 0.11 });
+        [[60, 64, 67], [65, 69, 72], [67, 71, 74], [72, 76, 79]].forEach((c, i) => {
+            for (const n of c) pluck(ctx, out, t + i * 0.26, { freq: midi(n - 12), release: i === 3 ? 1.4 : 0.3, gain: 0.05 });
         });
-        for (let i = 0; i < 8; i++) fm(ctx, out, t + 0.9 + i * 0.05, { freq: midi(81 + i * 2), ratio: 3, index: 2, release: 0.3, gain: 0.04, pan: Math.random() * 2 - 1 });
+        chime(ctx, out, t + 0.8, { freq: midi(96), release: 1.6, gain: 0.05 });
     },
 
-    // Victoire du Snake God : braam sombre et chœur grave.
+    // Victoire du Snake God : thème de méchant farceur (mineur, malicieux, pas angoissant).
     victoryGod(ctx, out, t) {
-        braam(ctx, out, t, { root: 33, duration: 3, gain: 0.09 });
-        for (const n of [45, 48, 52, 57]) supersaw(ctx, out, t + 0.3, { freq: midi(n), voices: 3, attack: 0.6, hold: 1, release: 2, gain: 0.04, filter: { type: "lowpass", freq: 1400 } });
-        tone(ctx, out, t, { type: "sine", freq: 45, freqEnd: 30, release: 3, gain: 0.4 });
-    },
-
-    // Défaite : descente douce, claire mais pas frustrante.
-    defeat(ctx, out, t) {
-        [[64, 0], [62, 0.22], [60, 0.44], [57, 0.66]].forEach(([n, d]) =>
-            fm(ctx, out, t + d, { freq: midi(n), ratio: 2, index: 1.2, release: d === 0.66 ? 1.4 : 0.35, gain: 0.1 })
+        [[57, 0], [60, 0.18], [63, 0.36], [62, 0.54], [57, 0.8]].forEach(([n, d], i) =>
+            pluck(ctx, out, t + d, { freq: midi(n - 12), release: i === 4 ? 1.4 : 0.25, gain: 0.12, cutoff: 1800 })
         );
-        supersaw(ctx, out, t + 0.66, { freq: midi(45), voices: 3, attack: 0.3, release: 1.6, gain: 0.04, filter: { type: "lowpass", freq: 900 } });
+        braam(ctx, out, t + 0.8, { root: 33, duration: 2, gain: 0.05 });
+        chime(ctx, out, t + 0.8, { freq: midi(81), release: 1.6, gain: 0.05 });
     },
 
-    // Élimination d'un joueur : sting dissonant court.
+    // Défaite : petite descente douce.
+    defeat(ctx, out, t) {
+        [[67, 0], [65, 0.22], [64, 0.44], [60, 0.66]].forEach(([n, d], i) =>
+            mallet(ctx, out, t + d, { freq: midi(n), ratio: 4, release: i === 3 ? 1.2 : 0.3, gain: 0.1 })
+        );
+        pluck(ctx, out, t + 0.66, { freq: midi(48), release: 1.4, gain: 0.06 });
+    },
+
+    // Élimination d'un joueur : « boup-boup » descendant.
     elimination(ctx, out, t) {
-        for (const n of [57, 63]) supersaw(ctx, out, t, { freq: midi(n), voices: 3, release: 0.6, gain: 0.05, filter: { type: "lowpass", freq: 2500, freqEnd: 600 } });
-        tone(ctx, out, t, { type: "sine", freq: midi(33), release: 0.6, gain: 0.25 });
+        pop(ctx, out, t, { freq: 520, to: 0.6, release: 0.15, gain: 0.14 });
+        pop(ctx, out, t + 0.16, { freq: 390, to: 0.5, release: 0.25, gain: 0.12 });
     },
 };

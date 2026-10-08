@@ -1,5 +1,6 @@
 import { MAPS } from "/shared/config.js";
 import { chebyshev, key, rotatingWallCells } from "/shared/grid.js";
+import { foodKind, trapKind } from "../render/catalog.js";
 import { Ambient } from "./Ambient.js";
 import { Music } from "./Music.js";
 import { GodSounds } from "./sounds/god.js";
@@ -24,6 +25,7 @@ export class GameAudio {
         this.intelKey = null;
         this.saidFinal = false;
         this.combo = { count: 0, at: 0 }; // repas enchaînés du joueur local
+        this.mapKind = "cube";
         audio.onReady(() => {
             this.music.start();
             this.ambient.start();
@@ -80,6 +82,7 @@ export class GameAudio {
     // ---------- Partie ----------
     onState(state, prev, myRole) {
         if (state.status === "ended") return;
+        this.mapKind = state.map?.kind ?? "cube";
         this.#countdown(state, prev);
         const mine = state.snakes.find((s) => s.id === myRole);
         const danger = mine?.alive ? this.#danger(state, mine) : 0;
@@ -173,14 +176,20 @@ export class GameAudio {
                         this.combo.at = now;
                         combo = this.combo.count;
                     }
-                    const recipe = ev.golden ? SnakeSounds.golden : (c, o, t) => SnakeSounds.eat(c, o, t, { combo });
+                    // Bouchée propre à l'aliment (croquant, juteux, viande...) : voir catalog.js.
+                    const flavor = foodKind(ev).flavor;
+                    const recipe = ev.golden ? SnakeSounds.golden : (c, o, t) => SnakeSounds.eat(c, o, t, { combo, flavor });
                     this.#play("snake", recipe, { position, gain, echo: mine ? 0.25 : 0 });
                     if (mine) this.#play("snake", SnakeSounds.grow, { delay: 0.12, gain: 0.7 });
                     break;
                 }
                 case "damage":
                     this.#play("snake", SnakeSounds.hurt, { position, gain });
-                    if (ev.cause === "trap") this.#play("snake", SnakeSounds.trapHit, { position, gain });
+                    if (ev.cause === "trap") {
+                        // Même modèle que celui affiché (le Cube 3D n'a que des mines).
+                        const kind = this.mapKind === "volume" ? "RuneMine" : trapKind(ev.cells[0]);
+                        this.#play("snake", (c, o, t) => SnakeSounds.trapHit(c, o, t, { kind }), { position, gain });
+                    }
                     else if (["boundary", "wall", "snake", "headOn", "crushed"].includes(ev.cause)) this.#play("snake", SnakeSounds.collision, { position, gain });
                     break;
                 case "eliminated":

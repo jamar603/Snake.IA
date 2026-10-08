@@ -10,6 +10,7 @@ import { GodController } from "./input/GodController.js";
 import { SnakeInput } from "./input/SnakeInput.js";
 import { MultiplayerClient } from "./net/MultiplayerClient.js";
 import { CameraController } from "./render/Cameras.js";
+import { foodKind } from "./render/catalog.js";
 import { cellToWorld } from "./render/coords.js";
 import { Effects } from "./render/Effects.js";
 import { Environment } from "./render/Environment.js";
@@ -316,7 +317,9 @@ function playEvents(s, size) {
             case "foodEaten":
                 view?.onEat(ev.golden);
                 if (ev.snake === myRole && cameras.mode === "snake") cameras.snake.punch(ev.golden ? 0.45 : 0.18);
-                effects.burst(p, ev.golden ? 0xffd34d : 0x9dff6a, { count: ev.golden ? 70 : 28, speed: ev.golden ? 4 : 2.6 });
+                // Éclats de la couleur de l'aliment croqué (pomme rouge, ananas jaune...).
+                effects.burst(p, foodKind(ev).color, { count: ev.golden ? 70 : 28, speed: ev.golden ? 4 : 2.6 });
+                if (!ev.golden) effects.ring(p, foodKind(ev).color, { size: 0.9, life: 0.4, normal: normalOf(ev.cells[0]) });
                 if (ev.golden) effects.ring(p, 0xffd34d, { size: 2 });
                 break;
             case "damage":

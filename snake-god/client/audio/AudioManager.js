@@ -86,7 +86,7 @@ export class AudioManager {
 
         // Réverbération partagée (envoi) : grands espaces, pouvoirs du dieu.
         this.reverb = ctx.createConvolver();
-        this.reverb.buffer = impulse(ctx, 3.2, 2.2);
+        this.reverb.buffer = impulse(ctx, 2.2, 2.8); // pièce chaleureuse plutôt que cathédrale
         this.reverbSend = ctx.createGain();
         this.reverbSend.gain.value = 0.6;
         this.reverbSend.connect(this.reverb).connect(this.buses.master);

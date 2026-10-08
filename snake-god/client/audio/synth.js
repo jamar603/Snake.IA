@@ -1,6 +1,7 @@
 // Briques de synthèse sonore (Web Audio API). Tous les sons du jeu sont
 // fabriqués à partir de ces primitives : pas de fichiers audio à charger.
-// Style visé : arcade sci-fi / darksynth (FM cristallin, supersaw, sub, glitch).
+// Style visé : arcade « cozy » / lo-fi (marimba, kalimba, bulles, piano électrique,
+// batterie feutrée), avec quelques briques plus dures pour les vrais dangers.
 
 let noiseBuffer = null;
 
@@ -17,6 +18,10 @@ export function getNoise(ctx) {
 export const vary = (x, pct = 0.08) => x * (1 + (Math.random() * 2 - 1) * pct);
 export const pick = (list) => list[Math.floor(Math.random() * list.length)];
 export const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+
+// Gamme pentatonique majeure (do ré mi sol la) : tout sonne juste, quel que soit l'ordre.
+export const PENTA = [0, 2, 4, 7, 9];
+export const penta = (root, step) => root + PENTA[((step % 5) + 5) % 5] + 12 * Math.floor(step / 5);
 
 // Enveloppe attaque / maintien / relâche sur un paramètre de gain.
 export function envelope(param, t, { attack = 0.005, hold = 0, release = 0.2, peak = 1, from = 0 } = {}) {
@@ -219,4 +224,53 @@ export function bitcrush(ctx, steps = 6) {
     }
     ws.curve = curve;
     return ws;
+}
+
+// ---------- Timbres « cozy » ----------
+
+// Lame de bois frappée (marimba, kalimba) : FM à décroissance rapide + fondamentale ronde.
+// `ratio` 4 = marimba, 5.4 = kalimba (partiel métallique), 3 = xylophone.
+export function mallet(ctx, out, t, { freq = 523, ratio = 4, release = 0.35, gain = 0.15, bright = 1.6, pan = null } = {}) {
+    fm(ctx, out, t, { freq, ratio, index: bright, indexEnd: 0.05, attack: 0.002, release: release * 0.6, gain: gain * 0.6, pan });
+    return tone(ctx, out, t, { type: "sine", freq, attack: 0.002, release, gain, pan });
+}
+
+// Corde pincée douce (triangle filtré qui se referme).
+export function pluck(ctx, out, t, { freq = 330, release = 0.4, gain = 0.12, pan = null, cutoff = 2400 } = {}) {
+    return tone(ctx, out, t, { type: "triangle", freq, attack: 0.003, release, gain, pan, filter: { type: "lowpass", freq: cutoff, freqEnd: 300, time: release } });
+}
+
+// Bulle qui éclate : sinus qui monte très vite (« bloup »).
+export function pop(ctx, out, t, { freq = 380, to = 1.9, release = 0.09, gain = 0.2, pan = null } = {}) {
+    return tone(ctx, out, t, { type: "sine", freq, freqEnd: freq * to, glide: release * 0.7, attack: 0.002, release, gain, pan });
+}
+
+// Bloc de bois (« toc ») : percussion sèche et chaleureuse.
+export function wood(ctx, out, t, { freq = 900, gain = 0.15, pan = null } = {}) {
+    tone(ctx, out, t, { type: "sine", freq, freqEnd: freq * 0.8, attack: 0.001, release: 0.06, gain, pan });
+    noise(ctx, out, t, { filterType: "bandpass", freq: freq * 2.2, q: 6, release: 0.025, gain: gain * 0.5, pan });
+}
+
+// Piano électrique (type Rhodes) : FM douce, attaque tintée, trémolo lent.
+export function epiano(ctx, out, t, { freq = 262, hold = 0.4, release = 1.2, gain = 0.08, pan = null } = {}) {
+    const end = t + 0.01 + hold + release;
+    const g = ctx.createGain();
+    const lfo = ctx.createOscillator();
+    const depth = ctx.createGain();
+    lfo.frequency.value = 4.2;
+    depth.gain.value = 0.25;
+    g.gain.value = 1;
+    lfo.connect(depth).connect(g.gain);
+    g.connect(out);
+    fm(ctx, g, t, { freq, ratio: 1, index: 1.1, indexEnd: 0.15, attack: 0.008, hold, release, gain, pan });
+    fm(ctx, g, t, { freq: freq * 2, ratio: 7, index: 0.6, indexEnd: 0.01, attack: 0.002, release: 0.25, gain: gain * 0.25, pan });
+    lfo.start(t);
+    lfo.stop(end + 0.05);
+    return end;
+}
+
+// Clochette / carillon : partiels inharmoniques qui tintent longtemps.
+export function chime(ctx, out, t, { freq = 1046, release = 1.2, gain = 0.06, pan = null } = {}) {
+    fm(ctx, out, t, { freq, ratio: 3.5, index: 2.2, indexEnd: 0.1, release, gain, pan });
+    return tone(ctx, out, t, { type: "sine", freq: freq * 2.01, release: release * 0.5, gain: gain * 0.4, pan });
 }

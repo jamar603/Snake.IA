@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { AXES, key, rotatingWallCells, rotatingWallOffsets } from "/shared/grid.js";
 import { createMap } from "/shared/maps/index.js";
-import { worldPieces } from "./assets.js";
+import { propPieces, worldPieces } from "./assets.js";
+import { foodKind, trapKind } from "./catalog.js";
 import { CUBE_GAP, cellToWorld, vec } from "./coords.js";
 import { PHASE_COLORS } from "./Environment.js";
 import { circuitTextures, glowTexture, hazardTexture } from "./textures.js";
@@ -30,6 +31,7 @@ export class WorldController {
         this.portals = new Map(); // id -> vue
         this.blocked = new Set();
         this.foodKeys = new Set();
+        this.leaving = []; // aliments mangés et pièges retirés, le temps de leur animation de sortie
         this.frameColor = PHASE_COLORS[1].clone();
         this.#buildMaterials();
         this.setArena(map.arena.size);
@@ -47,6 +49,14 @@ export class WorldController {
                 if (o.material?.name === "FrameGlow") o.material = this.frameGlowMat;
             });
             this.#rebuildFrame();
+        });
+        // Aliments et pièges de Blender : on recrée ceux déjà affichés en version simple.
+        propPieces.then((models) => {
+            if (!models) return;
+            this.models = models;
+            for (const m of [...this.traps.values(), ...this.food.values()]) this.root.remove(m);
+            this.traps.clear();
+            this.food.clear();
         });
     }
 
@@ -479,7 +489,12 @@ export class WorldController {
     }
 
     // ---------- Pièges et nourriture ----------
-    #createTrap() {
+    // Chaque case a son modèle de piège (catalog.js) : plaque à pointes, mâchoires, scie
+    // ou mine runique. Même effet pour tous : seule l'apparence change.
+    #createTrap(item) {
+        const kind = trapKind(item.cell);
+        // Cube 3D : les cases flottent dans le volume, seule la mine (qui flotte aussi) y a sa place.
+        if (kind !== "RuneMine" && this.map.kind !== "volume" && this.models?.[kind]) return this.#createFlatTrap(kind);
         if (this.pieces?.Trap) return this.#createStoneTrap();
         const g = new THREE.Group();
         g.add(new THREE.Mesh(this.geo.mineBody, this.mats.mine));
@@ -496,6 +511,35 @@ export class WorldController {
         glow.scale.setScalar(1.1);
         g.add(core, glow);
         g.userData.glow = glow;
+        return g;
+    }
+
+    // Piège posé à plat sur sa face (pointes, mâchoires, scie) : ses pièces mobiles sont
+    // des enfants nommés du modèle (blender/build_props.py).
+    #createFlatTrap(kind) {
+        const g = new THREE.Group();
+        const model = this.models[kind].clone(true);
+        let rune = null;
+        model.traverse((o) => {
+            if (o.material?.name === "TrapGlow") {
+                rune ??= o.material.clone();
+                o.material = rune;
+            }
+        });
+        const glow = new THREE.Sprite(this.glowMat(0xff2040, 0.3));
+        glow.scale.setScalar(0.9);
+        glow.position.y = -0.3;
+        g.add(model, glow);
+        const part = (name) => model.getObjectByName(name);
+        Object.assign(g.userData, {
+            flat: true,
+            glow,
+            rune,
+            spikes: part("SpikeTrapSpikes"),
+            jaws: [part("JawTrapJawA"), part("JawTrapJawB")].filter(Boolean),
+            blade: part("SawTrapBlade"),
+        });
+        if (g.userData.spikes) g.userData.spikesY = g.userData.spikes.position.y;
         return g;
     }
 
@@ -524,30 +568,51 @@ export class WorldController {
         this.focus = position;
     }
 
-    // Piège déclenché : on le retire tout de suite (l'explosion prend le relais).
+    // Piège déclenché : il claque (pointes qui jaillissent, mâchoires qui se ferment,
+    // lame qui s'emballe) puis disparaît. L'état a déjà pu le retirer : on le retrouve
+    // alors parmi les objets en sortie.
     triggerTrap(cell) {
         const k = key(cell) + "trap";
-        const g = this.traps.get(k);
+        let g = this.traps.get(k);
+        if (g) {
+            this.traps.delete(k);
+            this.leaving.push(g);
+        } else g = this.leaving.find((o) => o.userData.key === k);
         if (!g) return;
-        this.root.remove(g);
-        this.traps.delete(k);
+        g.userData.leaveMode = "snap";
+        g.userData.leaveAt = performance.now();
     }
 
+    // Aliment : modèle tiré par le serveur (pomme, ananas, viande...), pomme dorée pour
+    // le fruit doré. Repli sur une sphère tant que les modèles ne sont pas chargés.
     #createFood(item) {
+        const kind = foodKind(item);
         const golden = item.kind === "golden";
         const g = new THREE.Group();
-        const fruit = new THREE.Mesh(this.geo.fruit, golden ? this.mats.golden : this.mats.fruit);
-        fruit.scale.set(1, 0.92, 1);
-        fruit.castShadow = true;
-        const leaf = new THREE.Mesh(this.geo.leaf, this.mats.leaf);
-        leaf.position.set(0.06, 0.25, 0);
-        leaf.rotation.z = -0.6;
-        leaf.scale.z = 0.3;
-        const glow = new THREE.Sprite(this.glowMat(golden ? 0xffc23d : 0x7dff5a, golden ? 0.9 : 0.5));
-        glow.scale.setScalar(golden ? 2 : 1.2);
-        g.add(fruit, leaf, glow);
+        const model = this.models?.[kind.model];
+        if (model) {
+            const mesh = model.clone(true);
+            mesh.scale.setScalar(1.3); // lisible de loin, sans déborder de sa case
+            g.add(mesh);
+        }
+        else {
+            const fruit = new THREE.Mesh(this.geo.fruit, golden ? this.mats.golden : this.mats.fruit);
+            fruit.scale.set(1, 0.92, 1);
+            fruit.castShadow = true;
+            const leaf = new THREE.Mesh(this.geo.leaf, this.mats.leaf);
+            leaf.position.set(0.06, 0.25, 0);
+            leaf.rotation.z = -0.6;
+            leaf.scale.z = 0.3;
+            g.add(fruit, leaf);
+        }
+        // Halo discret : sur le sol clair de WORLD, un halo fort sature le bloom en tache blanche.
+        const glow = new THREE.Sprite(this.glowMat(kind.color, golden ? 0.85 : this.map.kind === "world" ? 0.14 : 0.32));
+        glow.scale.setScalar(golden ? 2 : 1.1);
+        g.add(glow);
         if (golden) {
-            const ring = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.025, 8, 40), new THREE.MeshBasicMaterial({ color: 0xffe08a }));
+            this.geo.goldenRing ??= new THREE.TorusGeometry(0.4, 0.025, 8, 40);
+            this.mats.goldenRing ??= new THREE.MeshBasicMaterial({ color: 0xffe08a });
+            const ring = new THREE.Mesh(this.geo.goldenRing, this.mats.goldenRing);
             g.add(ring);
             g.userData.ring = ring;
         }
@@ -567,13 +632,17 @@ export class WorldController {
             obj.userData.normal = this.#normal(it.cell);
             obj.userData.bornAt = time;
             obj.userData.phase = Math.random() * Math.PI * 2;
+            obj.userData.key = k;
             this.root.add(obj);
             map.set(k, obj);
         }
+        // Retirés : courte animation de sortie (aliment croqué, piège qui se replie).
         for (const [k, obj] of map) {
             if (seen.has(k)) continue;
-            this.root.remove(obj);
             map.delete(k);
+            obj.userData.leaveMode = map === this.food ? "eat" : "fade";
+            obj.userData.leaveAt = time;
+            this.leaving.push(obj);
         }
     }
 
@@ -778,24 +847,7 @@ export class WorldController {
                 mat.emissiveIntensity = 1 + 0.35 * Math.sin(time / 300 + view.data.id);
             }
         }
-        for (const g of this.traps.values()) {
-            const t = time / 1000 + g.userData.phase;
-            // Éveil : 0 loin du Snake du joueur, 1 à une case. Le piège tourne plus vite,
-            // grossit et sa rune brûle : on le voit venir.
-            const dist = this.focus ? g.position.distanceTo(this.focus) : Infinity;
-            const target = Math.max(0, Math.min(1, (3.5 - dist) / 2.5));
-            g.userData.alert = (g.userData.alert ?? 0) + (target - (g.userData.alert ?? 0)) * Math.min(1, dt * 8);
-            const alert = g.userData.alert;
-            g.userData.spin = (g.userData.spin ?? 0) + dt * (0.8 + alert * 4);
-            g.rotation.set(g.userData.spin * 0.6, g.userData.spin, 0);
-            // Apparition : 200 ms ease-out depuis 70 % (jamais depuis zéro).
-            const born = Math.min(1, (time - g.userData.bornAt) / 200);
-            const enter = 0.7 + 0.3 * (1 - Math.pow(1 - born, 3));
-            const beat = 1 + (0.05 + alert * 0.1) * Math.sin(t * (6 + alert * 10));
-            g.scale.setScalar(enter * beat * (1 + alert * 0.15));
-            g.userData.glow.material.opacity = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(t * 7)) + alert * 0.4;
-            if (g.userData.rune) g.userData.rune.emissiveIntensity = 3 + alert * 6;
-        }
+        for (const g of this.traps.values()) this.#animateTrap(g, time, dt);
         const spin = new THREE.Quaternion();
         for (const g of this.food.values()) {
             const t = time / 1000 + g.userData.phase;
@@ -803,9 +855,14 @@ export class WorldController {
             // Le fruit flotte au-dessus de sa face et tourne autour de sa normale.
             g.position.copy(g.userData.base).addScaledVector(n, Math.sin(t * 2.6) * 0.07);
             g.quaternion.setFromUnitVectors(Y_AXIS, n).multiply(spin.setFromAxisAngle(Y_AXIS, t * 0.9));
-            g.scale.setScalar(Math.min(1, (time - g.userData.bornAt) / 300) * (g.userData.golden ? 1.25 : 1));
+            // Apparition : 380 ms avec un rebond, depuis 40 % ; ensuite l'aliment « respire ».
+            const pop = 0.4 + 0.6 * easeOutBack(Math.min(1, (time - g.userData.bornAt) / 380));
+            const size = pop * (g.userData.golden ? 1.25 : 1);
+            const breathe = Math.sin(t * 3.2) * 0.04;
+            g.scale.set(size * (1 - breathe * 0.5), size * (1 + breathe), size * (1 - breathe * 0.5));
             if (g.userData.ring) g.userData.ring.rotation.x = t * 2;
         }
+        this.#animateLeaving(time, dt);
         for (const view of this.portals.values()) {
             const left = view.data.endsInMs - (time - view.stateTime);
             // Ouverture : 300 ms ease-out depuis 50 % ; clignote dans ses 3 dernières secondes.
@@ -839,7 +896,69 @@ export class WorldController {
         }
     }
 
+    // Pièges : s'éveillent quand le Snake du joueur approche (lisibilité du danger).
+    #animateTrap(g, time, dt) {
+        const u = g.userData;
+        const t = time / 1000 + u.phase;
+        // Éveil : 0 loin du Snake du joueur, 1 à une case.
+        const dist = this.focus ? g.position.distanceTo(this.focus) : Infinity;
+        const target = Math.max(0, Math.min(1, (3.5 - dist) / 2.5));
+        u.alert = (u.alert ?? 0) + (target - (u.alert ?? 0)) * Math.min(1, dt * 8);
+        const alert = u.alert;
+        // Apparition : 200 ms ease-out depuis 70 % (jamais depuis zéro).
+        const born = Math.min(1, (time - u.bornAt) / 200);
+        const enter = 0.7 + 0.3 * (1 - Math.pow(1 - born, 3));
+        u.glow.material.opacity = (u.flat ? 0.15 : 0.3) + 0.2 * (0.5 + 0.5 * Math.sin(t * 7)) + alert * 0.4;
+        if (u.rune) u.rune.emissiveIntensity = 3 + alert * 6 + Math.sin(t * 6) * 0.8;
+        if (!u.flat) {
+            // Mine runique : tourne plus vite, grossit et bat quand un Snake approche.
+            u.spin = (u.spin ?? 0) + dt * (0.8 + alert * 4);
+            g.rotation.set(u.spin * 0.6, u.spin, 0);
+            const beat = 1 + (0.05 + alert * 0.1) * Math.sin(t * (6 + alert * 10));
+            g.scale.setScalar(enter * beat * (1 + alert * 0.15));
+            return;
+        }
+        g.quaternion.setFromUnitVectors(Y_AXIS, u.normal);
+        g.scale.setScalar(enter * (1 + alert * 0.04));
+        // Pointes : rentrées, elles pointent le bout du nez par moments, puis se dressent à moitié.
+        if (u.spikes) u.spikes.position.y = u.spikesY - 0.26 + Math.max(0, Math.sin(t * 1.3)) * 0.05 + alert * (0.13 + Math.sin(t * 30) * 0.01);
+        // Mâchoires : ouvertes à plat, elles tremblent quand un Snake approche.
+        u.jaws.forEach((jaw, i) => (jaw.rotation.x = (i ? -1 : 1) * (0.03 + alert * 0.18 * Math.abs(Math.sin(t * 14)))));
+        // Scie : tourne et va-et-vient dans sa fente, de plus en plus vite.
+        if (u.blade) {
+            u.blade.rotation.z -= dt * (4 + alert * 16);
+            u.blade.position.x = Math.sin(t * (1.2 + alert * 2)) * 0.12;
+        }
+    }
+
+    // Sorties : aliment croqué (gonfle puis disparaît), piège qui claque ou se replie.
+    #animateLeaving(time, dt) {
+        this.leaving = this.leaving.filter((g) => {
+            const u = g.userData;
+            const duration = { eat: 220, snap: 320, fade: 200 }[u.leaveMode];
+            const k = Math.min(1, (time - u.leaveAt) / duration);
+            if (u.leaveMode === "eat") {
+                // Jusqu'à 35 % : gonfle de 35 % ; ensuite rétrécit jusqu'à disparaître.
+                const s = k < 0.35 ? 1 + (k / 0.35) * 0.35 : 1.35 * (1 - (k - 0.35) / 0.65);
+                g.scale.setScalar(Math.max(0.001, s * (u.golden ? 1.25 : 1)));
+            } else if (u.leaveMode === "snap") {
+                const snap = Math.min(1, k / 0.25); // claquement en 80 ms
+                if (u.spikes) u.spikes.position.y = u.spikesY + 0.04 * snap;
+                u.jaws?.forEach((jaw, i) => (jaw.rotation.x = (i ? -1 : 1) * 1.5 * snap));
+                if (u.blade) u.blade.rotation.z -= dt * 40;
+                if (u.rune) u.rune.emissiveIntensity = 12;
+                const shrink = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
+                g.scale.setScalar(Math.max(0.001, (u.flat ? 1 : 1 + 0.4 * snap) * shrink));
+            } else g.scale.setScalar(Math.max(0.001, 1 - k));
+            if (k < 1) return true;
+            this.root.remove(g);
+            return false;
+        });
+    }
+
     clear() {
+        for (const g of this.leaving) this.root.remove(g);
+        this.leaving = [];
         for (const view of this.walls.values()) this.#removeWall(view);
         for (const m of [...this.traps.values(), ...this.food.values()]) this.root.remove(m);
         for (const v of [...this.zones.values(), ...this.portals.values()]) this.root.remove(v.group);

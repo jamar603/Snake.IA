@@ -100,7 +100,7 @@ export class GameManager {
         this.walls = new WallSystem();
         this.traps = new TrapSystem();
         this.teleporters = new TeleporterSystem();
-        this.food = new FoodSystem(this.grid, this.mapConfig.foodBySize[this.sizes[0]] ?? FOOD_COUNT, UPCOMING_FOOD_PREVIEW);
+        this.food = new FoodSystem(this.grid, this.mapConfig.foodBySize[this.sizes[0]] ?? FOOD_COUNT, UPCOMING_FOOD_PREVIEW, this.rng);
         this.zones = new ZoneSystem();
         this.worldEvents = new WorldEventSystem({ grid: this.grid, food: this.food, zones: this.zones, rng: this.rng });
         this.scores = new ScoreManager();
@@ -425,7 +425,7 @@ export class GameManager {
                 const golden = eaten === "golden";
                 s.growth.feed(golden ? WORLD_EVENTS.goldenFruit.growth : 1);
                 this.scores.onFoodEaten(s, golden ? WORLD_EVENTS.goldenFruit.points : undefined);
-                this.events.push({ type: "foodEaten", cells: [s.head], snake: s.id, golden });
+                this.events.push({ type: "foodEaten", cells: [s.head], snake: s.id, golden, variant: this.food.lastVariant });
                 // Le fruit doré soigne : +1 PV.
                 if (golden && s.health.heal(WORLD_EVENTS.goldenFruit.heal)) this.events.push({ type: "healed", cells: [s.head], snake: s.id, hp: s.health.hp });
                 const tier = evolutionFor(s.length + s.growth.pending);

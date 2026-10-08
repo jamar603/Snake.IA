@@ -61,7 +61,7 @@ Si la connexion est perdue, l'IA prend le relais ; la page se reconnecte toute s
 - Mur, obstacle, corps d'un Snake, choc frontal ou bord du terrain WORLD : -1 PV puis réapparition ailleurs, avec 1,8 s d'invulnérabilité (le Snake clignote et traverse les autres Snakes).
 - Piège : -1 PV, le piège disparaît, le Snake continue.
 - Mur rotatif : pivote de 90° toutes les 2,2 s et écrase ce qui se trouve sur son passage (-1 PV). Les cases balayées rougissent 0,7 s avant.
-- Piège : ses pointes sortent et sa rune s'allume quand ton Snake approche.
+- Piège : quatre modèles (plaque à pointes, mâchoires, scie, mine runique), tirés selon la case, même effet pour tous. Il s'éveille quand ton Snake approche (pointes qui se dressent, mâchoires qui tremblent, scie qui s'emballe) et claque quand il se déclenche.
 - Zone dangereuse et impact de météore : -1 PV à qui s'y trouve une fois l'avertissement passé.
 - 0 PV : Snake éliminé.
 - Le dieu ne peut pas poser de piège ou de mur à une case ou moins d'une tête.
@@ -132,17 +132,20 @@ Une expansion dure 2,8 s : annonce « WORLD EXPANSION », contour fantôme à la
 
 ### Son
 
-Tout le son est synthétisé en direct (Web Audio API), sans fichier audio, dans un style arcade sci-fi / darksynth : synthèse FM cristalline, supersaws, sub-basses, glitch numérique, écho stéréo calé sur le tempo, réverbération, compression et égalisation sur le master.
+Tout le son est synthétisé en direct (Web Audio API), sans fichier audio, dans un style arcade « cozy » / lo-fi : marimba, kalimba, bulles, blocs de bois, piano électrique, batterie feutrée, écho calé sur le tempo, réverbération chaleureuse, compression et égalisation sur le master. Les mélodies utilisent la gamme pentatonique : tout sonne juste, même enchaîné au hasard.
 
-- **Musique dynamique** générative : nappe supersaw, arpège à écho, sub-basse, grosse caisse avec effet de pompe (sidechain), charleston, basse roulante (basse "reese" en mode chaos), clap, mélodie thème, roulements de toms et montées de tension. Les couches entrent et sortent en fondu, le tempo accélère (92 → 148 BPM) et l'harmonie s'assombrit : exploration (phase 1), croissance (phase 2), danger (phase 3), chaos (phase 4), puis tension maximale dans les 20 dernières secondes. Les changements de phase et les expansions déclenchent une montée de filtre puis un impact musical. L'intensité dépend aussi de la taille des Snakes, des expansions et du danger.
-- **Combo** : des repas enchaînés font monter la note du son "pickup".
-- **Expansion du cube** : montée de tension, pulsations d'activation qui accélèrent, crépitements de construction, impact final.
-- **Snakes** : déplacement, manger, fruit doré, croissance, évolution, perte de PV, récupération de PV, collision, piège, réapparition, mort. Chaque son varie légèrement à chaque fois.
-- **Snake God** : signature grave et réverbérée, un son reconnaissable par pouvoir (piège, mur, mur rotatif et ses rotations, démolition, zone, déclenchement).
-- **Vision divine** : une cloche cristalline, entendue par le Snake God seul, signale chaque nouvelle révélation.
-- **Danger** : battement de cœur discret quand un piège, une zone ou une lame est tout proche, ou quand il ne reste qu'un PV. Le bourdon d'ambiance gronde à mesure que le monde approche de sa taille maximale.
+- **Musique dynamique** générative (chillhop) : piano électrique en accords de septième, basse ronde, batterie boom-bap avec swing, charleston, shaker, thème à la kalimba, contre-chant de marimba et montées douces. Les couches entrent et sortent en fondu, le tempo accélère (78 → 112 BPM) et l'harmonie change : balade (phase 1), groove (phases 2 et 3), tension (phase 4 et 20 dernières secondes). Les changements de phase et les expansions déclenchent une montée de filtre puis un impact (cymbale douce, basse, carillon).
+- **Combo** : des repas enchaînés jouent une petite mélodie qui monte, note après note.
+- **Nourriture** : chaque aliment a sa bouchée (croquant pour la pomme et la carotte, juteux pour l'ananas, grosse bouchée pour la viande, « boing » pour le champignon, bulle pour les cerises et le raisin).
+- **Pièges** : un son par modèle (« shling » des pointes, clac des mâchoires, vrombissement de la scie, « pouf » de la mine).
+- **Expansion du cube** : glissando de harpe qui accélère, petits « tocs » de construction, gong doux et accord final.
+- **Snakes** : déplacement, manger, fruit doré, croissance, évolution, perte de PV (« bonk »), récupération de PV, collision, réapparition, mort. Chaque son varie légèrement à chaque fois.
+- **Snake God** : un magicien farceur, un son reconnaissable par pouvoir (piège, mur, mur rotatif et ses rotations, démolition, zone, déclenchement).
+- **Vision divine** : un carillon, entendu par le Snake God seul, signale chaque nouvelle révélation.
+- **Ambiance** : brise, craquements de vinyle, carillons à vent de temps en temps ; un bourdon grave n'apparaît que quand le monde approche de sa taille maximale.
+- **Danger** : battement de cœur doux quand un piège, une zone ou une lame est tout proche, ou quand il ne reste qu'un PV.
 - **Audio spatial 3D** (HRTF) : pièges, murs, pouvoirs, impacts et événements sont placés dans l'espace ; l'auditeur suit la caméra.
-- **Fin de partie** : fanfare (victoire des Snakes), chœur sombre (victoire du dieu), descente douce (défaite), cloche (fin du timer), sting d'élimination. Un annonceur (synthèse vocale du navigateur) annonce phases, expansions, 20 dernières secondes et résultat.
+- **Fin de partie** : petite fanfare (victoire des Snakes), thème de méchant farceur (victoire du dieu), descente douce (défaite), cloche (fin du timer). Un annonceur (synthèse vocale du navigateur) annonce phases, expansions, 20 dernières secondes et résultat.
 - **Paramètres** : volume général, musique, effets, ambiance, voix ; coupure séparée de chaque catégorie (musique, ambiance, voix, effets, Snakes, Snake God, monde, interface).
 
 Le son démarre au premier clic ou à la première touche (règle des navigateurs).
@@ -195,7 +198,9 @@ client/
   net/MultiplayerClient.js
   render/SnakeModel.js    modèle 3D du Snake : corps tubulaire, tête, accessoires, évolutions
   render/SnakeView.js     Snake en jeu : interpolation, traînée, rayon de visée
-  render/WorldController.js  cube de verre et sa grille / bordure du terrain, obstacles, lames, mines, portails, fruits, zones, météores
+  render/WorldController.js  cube de verre et sa grille / bordure du terrain, obstacles, lames, pièges, portails, nourriture, zones, météores
+  render/catalog.js       aliments (modèle, couleur, saveur sonore) et modèles de pièges
+  render/assets.js        chargement des modèles Blender (island.glb, props.glb)
   render/Environment.js   ciel, socle runique, poussières, lumières, couleur des phases
   render/PostFX.js        bloom
   render/Effects.js       particules et ondes de choc
@@ -206,7 +211,7 @@ client/
   input/GodController.js  pouvoir, clic sur la surface, orientation, aperçu
   audio/AudioManager.js   contexte audio, bus par catégorie, réverbération, audio spatial, annonceur
   audio/Music.js          musique générative en couches
-  audio/Ambient.js        vent cosmique et bourdon
+  audio/Ambient.js        brise, vinyle, carillons à vent, bourdon de fin de monde
   audio/GameAudio.js      événements du jeu -> sons, intensité, danger, vision divine
   audio/sounds/           recettes sonores : snake, god, world, ui
   audio/synth.js          primitives de synthèse
@@ -217,6 +222,21 @@ test/                     tests des règles, de l'IA et du multijoueur (npm test
 ```
 
 Ajouter un pouvoir : le déclarer dans `POWERS` (`shared/config.js`), écrire sa validation et son exécution dans `GodPowerSystem`, son aperçu dans `GodController.previewCells` et son icône dans `client/ui/icons.js`.
+
+## Modèles 3D (Blender)
+
+Les modèles sont générés par des scripts Blender reproductibles (aucun fichier .blend à maintenir) :
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python blender/build_island.py
+"C:\Program Files\Blender Foundation\Blender 5.1\blender.exe" --background --python blender/build_props.py -- --preview apercu.png
+```
+
+- `build_island.py` -> `client/assets/island.glb` : île, dalles, décors, cadre du cube, mine runique.
+- `build_props.py` -> `client/assets/props.glb` : nourriture (pomme, ananas, viande, cerises, carotte, champignon, raisin, pomme dorée) et pièges (plaque à pointes, mâchoires, scie). Les pièces mobiles des pièges sont des objets enfants nommés, animés par le jeu.
+- `build_snake.py` -> `client/assets/snake.glb`.
+
+Le serveur tire l'apparence de chaque aliment (`variant`, purement cosmétique) ; le modèle de piège dépend de la case. Ajouter un aliment : le modeler dans `build_props.py`, puis l'ajouter à `FOOD_KINDS` (`client/render/catalog.js`) avec sa couleur et sa saveur sonore.
 
 ## Prochaines étapes
 

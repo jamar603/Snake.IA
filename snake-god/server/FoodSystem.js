@@ -3,12 +3,16 @@ import { chebyshev, key } from "../shared/grid.js";
 // Nourriture : `count` fruits normaux en permanence, plus des fruits spéciaux
 // (fruit doré, pluie de nourriture). Les prochaines apparitions sont tirées
 // à l'avance pour que le Snake God puisse les voir (information exclusive).
+// `variant` : apparence tirée au hasard (pomme, ananas, viande...), purement
+// cosmétique, identique pour tous les clients.
 export class FoodSystem {
-    constructor(grid, count, previewCount = 3) {
+    constructor(grid, count, previewCount = 3, rng = Math.random) {
         this.grid = grid;
+        this.rng = rng;
         this.count = count;
         this.previewCount = previewCount;
-        this.food = new Map(); // cellKey -> { cell, kind: "normal" | "golden", expiresAt }
+        this.food = new Map(); // cellKey -> { cell, kind: "normal" | "golden", expiresAt, variant }
+        this.lastVariant = 0; // apparence du dernier fruit mangé (pour les effets)
         this.upcoming = []; // prochaines cellules de nourriture normale
     }
 
@@ -32,9 +36,13 @@ export class FoodSystem {
             // La cellule prévue a pu être occupée entre-temps : on en tire une autre.
             if (!cell || !this.grid.isFree(cell) || !farFromHeads(cell)) cell = this.#draw(farFromHeads);
             if (!cell) return;
-            this.food.set(key(cell), { cell, kind: "normal", expiresAt: null });
+            this.food.set(key(cell), { cell, kind: "normal", expiresAt: null, variant: this.#variant() });
             this.#fillUpcoming(farFromHeads);
         }
+    }
+
+    #variant() {
+        return Math.floor(this.rng() * 1000);
     }
 
     #draw(accept) {
@@ -51,7 +59,7 @@ export class FoodSystem {
 
     addSpecial(cell, kind, expiresAt = null) {
         if (!this.grid.isFree(cell)) return false;
-        this.food.set(key(cell), { cell, kind, expiresAt });
+        this.food.set(key(cell), { cell, kind, expiresAt, variant: this.#variant() });
         return true;
     }
 
@@ -61,6 +69,7 @@ export class FoodSystem {
         const item = this.food.get(k);
         if (!item) return null;
         this.food.delete(k);
+        this.lastVariant = item.variant ?? 0;
         return item.kind;
     }
 
@@ -85,6 +94,6 @@ export class FoodSystem {
     }
 
     items() {
-        return [...this.food.values()].map((f) => ({ cell: f.cell, kind: f.kind }));
+        return [...this.food.values()].map((f) => ({ cell: f.cell, kind: f.kind, variant: f.variant ?? 0 }));
     }
 }

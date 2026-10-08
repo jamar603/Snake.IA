@@ -116,6 +116,22 @@ test("le Snake avance et grandit en mangeant", () => {
     assert.equal(s.length, SNAKE.startLength + 1);
 });
 
+test("nourriture : apparence tirée au hasard, transmise aux clients et à l'événement", () => {
+    const game = newGame({ snake1: "A" });
+    game.food.count = 4;
+    game.food.refill();
+    const items = game.food.items();
+    assert.equal(items.length, 4);
+    for (const f of items) assert.ok(Number.isInteger(f.variant) && f.variant >= 0, "chaque aliment a une variante");
+    const s = place(game, "snake1", at(6, 7));
+    const target = at(7, 7);
+    game.food.food.set(key(target), { cell: target, kind: "normal", expiresAt: null, variant: 123 });
+    game.tick(100);
+    const ev = game.events.find((e) => e.type === "foodEaten");
+    assert.equal(ev?.variant, 123);
+    assert.equal(s.score, SNAKE.foodPoints, "la variante ne change pas les points");
+});
+
 test("piège : -1 PV puis disparition", () => {
     const game = newGame({ snake1: "A", god: "G" });
     const s = place(game, "snake1", at(5, 7));
