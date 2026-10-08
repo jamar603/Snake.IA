@@ -311,7 +311,7 @@ function playEvents(s, size) {
     for (const ev of s.events) {
         const p = ev.cells?.[0] && pos(ev.cells[0]);
         const view = ev.snake && snakeViews.get(ev.snake);
-        const glow = view?.model.glowColor ?? new THREE.Color(0xb36bff);
+        const glow = view?.model.glowColor ?? new THREE.Color(0xe07bff);
         switch (ev.type) {
             case "foodEaten":
                 view?.onEat(ev.golden);
@@ -370,7 +370,7 @@ function playEvents(s, size) {
             case "teleporterPlaced":
                 for (const c of ev.cells) {
                     effects.ring(pos(c), 0x6bf0ff, { size: 1.4, normal: normalOf(c) });
-                    effects.burst(pos(c), 0x6bf0ff, { count: 24, speed: 2.4, endColor: 0x4b2a9a });
+                    effects.burst(pos(c), 0x6bf0ff, { count: 24, speed: 2.4, endColor: 0x2a2440 });
                 }
                 break;
             case "teleported":
@@ -382,7 +382,7 @@ function playEvents(s, size) {
                 if (ev.snake === myRole) postfx.pulse(0.6);
                 break;
             case "teleporterClosed":
-                for (const c of ev.cells) effects.burst(pos(c), 0x8fa2ff, { count: 12, speed: 1.6 });
+                for (const c of ev.cells) effects.burst(pos(c), 0xc9b8ff, { count: 12, speed: 1.6 });
                 break;
             case "trapPlaced":
                 effects.ring(p, 0xff3b5c, { size: 1 });
@@ -392,18 +392,18 @@ function playEvents(s, size) {
                 effects.explosion(p, { color: 0xff4a2e, scale: 1, debris: 14, debrisColor: 0x2b2233 });
                 break;
             case "wallPlaced":
-                for (const c of ev.cells) effects.burst(pos(c), 0xc47dff, { count: 14, speed: 2.4 });
-                effects.ring(p, 0xc47dff, { size: 1.6 });
+                for (const c of ev.cells) effects.burst(pos(c), 0xe07bff, { count: 14, speed: 2.4 });
+                effects.ring(p, 0xe07bff, { size: 1.6 });
                 break;
             case "wallDemolished":
-                for (const c of ev.cells) effects.explosion(pos(c), { color: 0x9fc0ff, hot: 0xe8f0ff, scale: 0.7, debris: 10, debrisColor: 0x3a3352, sparks: 0.5 });
+                for (const c of ev.cells) effects.explosion(pos(c), { color: 0xc9b8ff, hot: 0xffffff, scale: 0.7, debris: 10, debrisColor: 0x3a3352, sparks: 0.5 });
                 shake(0.2);
                 break;
             case "wallRotated":
-                for (const c of ev.cells) effects.burst(pos(c), 0xff6bf0, { count: 6, speed: 1.4, life: 0.5 });
+                for (const c of ev.cells) effects.burst(pos(c), 0xe07bff, { count: 6, speed: 1.4, life: 0.5 });
                 break;
             case "wallExpired":
-                for (const c of ev.cells) effects.burst(pos(c), 0x8fa2ff, { count: 10, speed: 1.6 });
+                for (const c of ev.cells) effects.burst(pos(c), 0xc9b8ff, { count: 10, speed: 1.6 });
                 break;
             case "zoneCreated":
                 effects.ring(p, 0xff2e4d, { size: 2 });
@@ -447,7 +447,7 @@ function playEvents(s, size) {
                     p2.add(world.center);
                     effects.burst(p2, 0xd9c2ff, { count: 6, speed: 1.5, life: 0.9 });
                 }
-                for (const c of ev.cells) effects.burst(pos(c), 0x9fc0ff, { count: 12, speed: 2 });
+                for (const c of ev.cells) effects.burst(pos(c), 0xc9b8ff, { count: 12, speed: 2 });
                 shake(0.5);
                 postfx.pulse(1.4);
                 break;

@@ -42,7 +42,7 @@ export class WorldController {
                 if (o.material?.name === "FrameGlow") this.frameGlowMat = o.material;
             });
             // Veines discrètes : le bloom suffit à les faire briller sans éblouir.
-            if (this.frameGlowMat) this.frameGlowMat.emissiveIntensity = 0.7;
+            if (this.frameGlowMat) this.frameGlowMat.emissiveIntensity = 0.6;
             pieces.FrameCorner.traverse((o) => {
                 if (o.material?.name === "FrameGlow") o.material = this.frameGlowMat;
             });
@@ -51,11 +51,11 @@ export class WorldController {
     }
 
     #buildMaterials() {
-        const circuit = circuitTextures("#c47dff");
+        const circuit = circuitTextures("#e07bff");
         this.mats = {
             crystal: new THREE.MeshStandardMaterial({
-                color: 0x6f86d8,
-                emissive: 0x23307a,
+                color: 0x7f6fb0,
+                emissive: 0x1c1433,
                 emissiveIntensity: 0.8,
                 roughness: 0.12,
                 metalness: 0.1,
@@ -63,11 +63,11 @@ export class WorldController {
                 opacity: 0.88,
                 flatShading: true,
             }),
-            crystalCore: new THREE.MeshBasicMaterial({ color: 0x9fc0ff }),
-            ruin: new THREE.MeshStandardMaterial({ color: 0x7d7590, roughness: 0.85 }),
-            moss: new THREE.MeshStandardMaterial({ color: 0x2a6e4c, roughness: 0.9 }),
-            blade: new THREE.MeshStandardMaterial({ color: 0x2a0d3d, emissive: 0xff4fe0, emissiveIntensity: 1.1, metalness: 0.7, roughness: 0.25 }),
-            pivot: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff6bf0, emissiveIntensity: 2 }),
+            crystalCore: new THREE.MeshBasicMaterial({ color: 0xd9c8ff }),
+            ruin: new THREE.MeshStandardMaterial({ color: 0x6f6880, roughness: 0.85 }),
+            moss: new THREE.MeshStandardMaterial({ color: 0x2d5a42, roughness: 0.9 }),
+            blade: new THREE.MeshStandardMaterial({ color: 0x22102c, emissive: 0xe07bff, emissiveIntensity: 1.2, metalness: 0.7, roughness: 0.25 }),
+            pivot: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xf0b8ff, emissiveIntensity: 2 }),
             mine: new THREE.MeshStandardMaterial({ color: 0x2b0710, metalness: 0.8, roughness: 0.3, emissive: 0x40000a }),
             mineCore: new THREE.MeshStandardMaterial({ color: 0xff2a4a, emissive: 0xff1030, emissiveIntensity: 2.2 }),
             fruit: new THREE.MeshStandardMaterial({ color: 0x8dff5a, emissive: 0x3dff2a, emissiveIntensity: 0.9, roughness: 0.25 }),
@@ -128,7 +128,7 @@ export class WorldController {
     #buildCube(frame, n, volume = false) {
         const half = n / 2;
         this.glassMat ??= new THREE.MeshStandardMaterial({
-            color: 0x10132a,
+            color: 0x150f22,
             metalness: 0.6,
             roughness: 0.25,
             transparent: true,
@@ -159,7 +159,7 @@ export class WorldController {
         }
         const gridGeo = new THREE.BufferGeometry();
         gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-        this.gridMat ??= new THREE.LineBasicMaterial({ color: 0x6d7cff, transparent: true, opacity: 0.28, depthWrite: false });
+        this.gridMat ??= new THREE.LineBasicMaterial({ color: 0xb9a6ff, transparent: true, opacity: 0.24, depthWrite: false });
         frame.add(new THREE.LineSegments(gridGeo, this.gridMat));
 
         // Un point lumineux au centre de chaque case jouable, posé sur sa face.
@@ -172,7 +172,7 @@ export class WorldController {
         }
         const dotGeo = new THREE.BufferGeometry();
         dotGeo.setAttribute("position", new THREE.Float32BufferAttribute(dots, 3));
-        this.dotMat ??= new THREE.PointsMaterial({ color: 0x9fb0ff, size: 0.09, map: glowTexture(), transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending });
+        this.dotMat ??= new THREE.PointsMaterial({ color: 0xd2c4ff, size: 0.08, map: glowTexture(), transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending });
         frame.add(new THREE.Points(dotGeo, this.dotMat));
 
         const stone = this.pieces;
@@ -201,7 +201,7 @@ export class WorldController {
                 for (const z of corners) {
                     const node = stone ? stone.FrameCorner.clone() : new THREE.Mesh(new THREE.OctahedronGeometry(0.16), this.edgeMat);
                     node.position.set(x, y, z);
-                    const glow = new THREE.Sprite(this.glowMat(this.frameColor, 0.45));
+                    const glow = new THREE.Sprite(this.glowMat(this.frameColor, 0.38));
                     glow.position.copy(node.position);
                     this.cornerSprites.push(glow);
                     frame.add(node, glow);
@@ -233,7 +233,7 @@ export class WorldController {
                 const node = stone ? stone.FrameCorner.clone() : new THREE.Mesh(new THREE.OctahedronGeometry(0.16), this.edgeMat);
                 node.position.set(x, y + 0.1, z);
                 node.scale.setScalar(1.4);
-                const glow = new THREE.Sprite(this.glowMat(this.frameColor, 0.45));
+                const glow = new THREE.Sprite(this.glowMat(this.frameColor, 0.38));
                 glow.position.copy(node.position);
                 this.cornerSprites.push(glow);
                 frame.add(node, glow);
@@ -384,17 +384,17 @@ export class WorldController {
             const blade = new THREE.Mesh(new RoundedBoxGeometry(len, 0.6, 0.86, 3, 0.14), this.mats.blade);
             blade.quaternion.setFromRotationMatrix(basis);
             blade.castShadow = true;
-            const edgeGlow = new THREE.Mesh(new THREE.BoxGeometry(len + 0.04, 0.08, 0.9), new THREE.MeshBasicMaterial({ color: 0xff8af2 }));
+            const edgeGlow = new THREE.Mesh(new THREE.BoxGeometry(len + 0.04, 0.08, 0.9), new THREE.MeshBasicMaterial({ color: 0xe07bff }));
             edgeGlow.quaternion.copy(blade.quaternion);
             const pivot = new THREE.Mesh(new THREE.SphereGeometry(0.24, 20, 14), this.mats.pivot);
             group.add(blade, edgeGlow, pivot);
             // Axe de rotation : il sort de la face, comme un clou.
             const rod = new THREE.Group();
             const normal = this.#normal(w.pivot);
-            const rodMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4, 8), new THREE.MeshBasicMaterial({ color: 0xf3d4ff }));
+            const rodMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4, 8), new THREE.MeshBasicMaterial({ color: 0xe6dcff }));
             rodMesh.quaternion.setFromUnitVectors(Y_AXIS, normal);
             rodMesh.position.copy(normal).multiplyScalar(0.2);
-            const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.03, 8, 40), new THREE.MeshBasicMaterial({ color: 0xff8af2 }));
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.03, 8, 40), new THREE.MeshBasicMaterial({ color: 0xe07bff }));
             ring.quaternion.setFromUnitVectors(Z_AXIS, normal);
             ring.position.copy(normal).multiplyScalar(0.55);
             rod.add(rodMesh, ring);
@@ -404,7 +404,7 @@ export class WorldController {
             this.root.add(rod);
             view.targetQuat.setFromAxisAngle(axisVec, w.turns * QUARTER);
             group.quaternion.copy(view.targetQuat);
-            view.sweepMat = new THREE.MeshBasicMaterial({ color: 0xff4fe0, map: hazardTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+            view.sweepMat = new THREE.MeshBasicMaterial({ color: 0xff4d4d, map: hazardTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
             view.sweep = new THREE.Group();
             this.root.add(view.sweep);
         } else if (w.kind === "pillar") {

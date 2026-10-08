@@ -20,12 +20,32 @@ const hash = (a, b) => {
     return s - Math.floor(s);
 };
 
+// Décor de Blender ramené vers un gris violacé (une seule fois : les clones partagent les matériaux),
+// pour que l'île reste un fond et ne concurrence ni les Snakes ni l'interface.
+const MUTE = 0.45;
+function mutePalette(pieces) {
+    const seen = new Set();
+    const grey = new THREE.Color();
+    for (const [name, piece] of Object.entries(pieces)) {
+        if (name === "Trap") continue; // danger : lisible avant tout
+        piece.traverse?.((o) => {
+            for (const m of [o.material].flat()) {
+                // Les parties lumineuses (veines, lanternes, mines) gardent leur couleur : elles signalent.
+                if (!m?.color || seen.has(m) || m.emissive?.getHex()) continue;
+                seen.add(m);
+                const l = m.color.r * 0.2126 + m.color.g * 0.7152 + m.color.b * 0.0722;
+                m.color.lerp(grey.setRGB(l * 0.92, l * 0.86, l * 1.08), MUTE).multiplyScalar(0.9);
+            }
+        });
+    }
+}
+
 // Couleur dominante du monde à chaque phase : la tension se lit dans la lumière.
 export const PHASE_COLORS = {
     1: new THREE.Color(0x9d6bff),
-    2: new THREE.Color(0xff4fd8),
-    3: new THREE.Color(0xff8a3d),
-    4: new THREE.Color(0xff2e4d),
+    2: new THREE.Color(0xe07bff),
+    3: new THREE.Color(0xff9a3c),
+    4: new THREE.Color(0xff4d4d),
 };
 
 const SKY_VERT = /* glsl */ `
@@ -51,16 +71,18 @@ float fbm(vec3 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { 
 void main() {
     vec3 d = normalize(vDir);
     float h = d.y * 0.5 + 0.5;
-    // Nuit violette : plus claire en haut, comme un ciel de conte.
-    vec3 col = mix(vec3(0.012, 0.01, 0.03), vec3(0.07, 0.05, 0.16), smoothstep(0.35, 1.0, h));
+    // Nuit violette profonde, plus claire en haut.
+    vec3 col = mix(vec3(0.016, 0.01, 0.032), vec3(0.075, 0.05, 0.15), smoothstep(0.3, 1.0, h));
     float neb = fbm(d * 2.4 + vec3(uTime * 0.01, 0.0, 0.0));
     float neb2 = fbm(d * 4.0 - vec3(0.0, uTime * 0.008, 0.0));
-    col += uTint * pow(neb, 3.0) * 0.38;
-    col += vec3(0.1, 0.35, 0.6) * pow(neb2, 4.0) * 0.4;
+    col += uTint * pow(neb, 3.0) * 0.22;
+    col += vec3(0.42, 0.3, 0.75) * pow(neb2, 4.0) * 0.18;
+    // Ligne d'horizon fine : repère d'instrument.
+    col += vec3(0.06, 0.04, 0.11) * exp(-abs(d.y) * 18.0);
     vec3 sp = floor(d * 380.0);
-    float star = step(0.9975, hash(sp));
+    float star = step(0.9984, hash(sp));
     float tw = 0.6 + 0.4 * sin(uTime * 2.0 + hash(sp + 3.0) * 30.0);
-    col += vec3(star * tw);
+    col += vec3(0.93, 0.9, 1.0) * star * tw * 0.85;
     gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -90,7 +112,7 @@ export class Environment {
         this.platform.position.y = base;
         const disc = new THREE.Mesh(
             new THREE.CylinderGeometry(size * 0.95, size * 1.05, 0.5, 64),
-            new THREE.MeshStandardMaterial({ color: 0x0d0b1a, metalness: 0.6, roughness: 0.35 })
+            new THREE.MeshStandardMaterial({ color: 0x130f1c, metalness: 0.6, roughness: 0.35 })
         );
         disc.receiveShadow = true;
         this.platform.add(disc);
@@ -113,8 +135,8 @@ export class Environment {
         const n = 500;
         const pos = new Float32Array(n * 3);
         const col = new Float32Array(n * 3);
-        const warm = new THREE.Color(0xffd27a);
-        const cool = new THREE.Color(0xc9b2ff);
+        const warm = new THREE.Color(0xeee9ff);
+        const cool = new THREE.Color(0x9d7bff);
         const c = new THREE.Color();
         for (let i = 0; i < n; i++) {
             const k = Math.random();
@@ -134,7 +156,7 @@ export class Environment {
                 map: glowTexture(),
                 vertexColors: true,
                 transparent: true,
-                opacity: 0.75,
+                opacity: 0.45,
                 blending: THREE.AdditiveBlending,
                 depthWrite: false,
             })
@@ -144,24 +166,24 @@ export class Environment {
         // Lune en croissant, loin derrière le monde.
         this.moon = new THREE.Group();
         const moonSprite = (map, opacity, scale) => {
-            const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, color: 0xffd9a0, transparent: true, opacity, fog: false, depthWrite: false }));
+            const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, color: 0xe6dcff, transparent: true, opacity, fog: false, depthWrite: false }));
             s.scale.setScalar(scale);
             return s;
         };
-        this.moon.add(moonSprite(glowTexture(), 0.35, 22), moonSprite(moonTexture(), 1, 7));
+        this.moon.add(moonSprite(glowTexture(), 0.16, 22), moonSprite(moonTexture(), 1, 7));
         this.moon.position.set(-38, 30, -50);
         scene.add(this.moon);
         this.islets = [];
 
-        scene.add(new THREE.HemisphereLight(0xb9c6ff, 0x1a0f2e, 1.1));
-        this.key = new THREE.DirectionalLight(0xfff1e0, 2.2);
+        scene.add(new THREE.HemisphereLight(0xcdbfff, 0x150d24, 1.05));
+        this.key = new THREE.DirectionalLight(0xf6f0ff, 2.2);
         this.key.position.set(7, 15, 9);
         this.key.castShadow = true;
         this.key.shadow.mapSize.set(1024, 1024);
         Object.assign(this.key.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, near: 1, far: 60 });
         this.key.shadow.bias = -0.0008;
         scene.add(this.key);
-        const rim = new THREE.DirectionalLight(0x7fb6ff, 1.2);
+        const rim = new THREE.DirectionalLight(0xa98bff, 1.2);
         rim.position.set(-10, 4, -12);
         scene.add(rim);
         // Lueur venue de sous le monde : la présence du Snake God.
@@ -169,7 +191,7 @@ export class Environment {
         this.godLight.position.set(0, base - 1, 0);
         scene.add(this.godLight);
 
-        scene.fog = new THREE.FogExp2(0x070612, 0.018);
+        scene.fog = new THREE.FogExp2(0x0b0814, 0.018);
 
         this.props = []; // décors posés autour du cube
         this.leaving = []; // décors de l'arène précédente, en train de partir
@@ -180,6 +202,7 @@ export class Environment {
     async #loadIsland() {
         const pieces = await worldPieces;
         if (!pieces) return;
+        mutePalette(pieces);
 
         this.island = pieces.Island;
         this.island.castShadow = false;
@@ -291,8 +314,8 @@ export class Environment {
         this.terraces.clear();
         if (this.mapKind !== "world") return;
         this.terraceMats ??= {
-            grass: new THREE.MeshStandardMaterial({ color: 0x2a6e4c, roughness: 0.9 }),
-            stone: new THREE.MeshStandardMaterial({ color: 0x5b5470, roughness: 0.85 }),
+            grass: new THREE.MeshStandardMaterial({ color: 0x2d5a42, roughness: 0.9 }),
+            stone: new THREE.MeshStandardMaterial({ color: 0x4c4560, roughness: 0.85 }),
         };
         const d = n / 2 + 1.6;
         [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sz], i) => {
@@ -423,6 +446,6 @@ export class Environment {
         });
         this.godLight.color.copy(this.tint);
         this.runes.material.color.copy(this.tint);
-        this.godLight.intensity = 40 + Math.sin(time / 700) * 10;
+        this.godLight.intensity = 32 + Math.sin(time / 700) * 8;
     }
 }

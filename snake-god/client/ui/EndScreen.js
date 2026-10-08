@@ -12,7 +12,7 @@ export function renderEnd(summary, myRole) {
 
     $("end-kicker").textContent = iWon === null ? "Fin de partie" : iWon ? "Bravo" : "Dommage";
     $("end-title").textContent = iWon === null ? (godWon ? "Le dieu triomphe" : "Les Snakes survivent") : iWon ? "Victoire" : "Défaite";
-    $("screen-end").style.setProperty("--end-color", iWon === false ? "#ff3b5c" : godWon ? "#b36bff" : "#ffd34d");
+    $("screen-end").style.setProperty("--end-color", iWon === false ? "#ff4d4d" : godWon ? "#e07bff" : "#f2c94c");
     $("end-sub").textContent = godWon
         ? "Le Snake God a éliminé tous les Snakes."
         : `Au moins un Snake a survécu jusqu'au bout.${best ? ` Meilleur score : ${best.name}.` : ""}`;

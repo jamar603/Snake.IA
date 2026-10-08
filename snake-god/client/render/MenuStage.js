@@ -29,7 +29,7 @@ export class MenuStage {
         this.group.add(this.showcase.group);
         this.pedestal = new THREE.Mesh(
             new THREE.CylinderGeometry(1.15, 1.3, 0.25, 48),
-            new THREE.MeshStandardMaterial({ color: 0x15122a, metalness: 0.7, roughness: 0.3, emissive: 0x2a1450 })
+            new THREE.MeshStandardMaterial({ color: 0x16121f, metalness: 0.7, roughness: 0.3, emissive: 0x1e1038 })
         );
         this.pedestal.position.copy(this.showcasePos).add(new THREE.Vector3(0, -0.75, 0));
         this.pedestal.visible = false;
