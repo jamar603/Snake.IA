@@ -1,6 +1,6 @@
 import { key } from "../shared/grid.js";
 
-// Pièges posés par le Snake God : -1 PV puis disparition.
+// Pièges posés par le Snake God : dégâts légers (DAMAGE.trap) puis disparition.
 export class TrapSystem {
     constructor() {
         this.traps = new Map(); // cellKey -> cell

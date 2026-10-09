@@ -32,7 +32,7 @@ export function renderEnd(summary, myRole) {
                 <span>Longueur</span><b>${s.length}</b>${bar(s.length, maxLen)}
                 <span>Temps de survie</span><b>${formatTime(s.survivalMs)}</b>${bar(s.survivalMs, summary.durationMs || 1)}
                 <span>Nourriture</span><b>${s.foodEaten}</b>
-                <span>Dégâts subis</span><b>${s.damageTaken}</b>
+                <span>Dégâts subis</span><b>${s.damageTaken}%</b>
                 <span>Pièges déclenchés</span><b>${s.trapsTriggered}</b>
             </div>
         </div>`;

@@ -14,7 +14,7 @@ export const MAPS = {
         space: 15, // 13 + la couche de surface de chaque côté
         foodBySize: { 7: 7, 9: 9, 11: 11, 13: 13 },
         pillarsBySize: { 7: 4, 9: 3, 11: 3, 13: 3 },
-        snakeHp: 2,
+        damageScale: 1,
         maxRotatingWalls: 4,
     },
     // Version classique : le Snake se déplace DANS le volume du cube (gauche, droite, haut, bas).
@@ -25,7 +25,7 @@ export const MAPS = {
         space: 13,
         foodBySize: { 7: 6, 9: 7, 11: 8, 13: 10 },
         pillarsBySize: { 7: 3, 9: 2, 11: 3, 13: 3 },
-        snakeHp: 2,
+        damageScale: 1,
         maxRotatingWalls: 4,
         aiSweepDanger: [40, 3], // prudence des Snakes IA face aux lames (imminente, à venir)
     },
@@ -36,7 +36,7 @@ export const MAPS = {
         space: 29,
         foodBySize: { 17: 8, 21: 10, 25: 12, 29: 14 },
         pillarsBySize: { 17: 10, 21: 6, 25: 6, 29: 6 },
-        snakeHp: 3, // mode accessible : un PV de plus
+        damageScale: 0.67, // mode accessible : trois chocs au lieu de deux
         maxRotatingWalls: 3,
     },
 };
@@ -65,8 +65,21 @@ export const UNLIMITED = {
 export const durationLabel = (s) => (s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "Illimitée");
 export const COUNTDOWN_SECONDS = 3;
 
+// Vie en pourcentage. Dégâts par cause, multipliés par `damageScale` de la map.
+// Chocs (bord, mur, autre Snake, face à face, lame) : deux suffisent à éliminer.
+// Pièges et zones du dieu : légers, ils usent sans tuer d'un coup.
+export const DAMAGE = {
+    boundary: 50,
+    wall: 50,
+    snake: 50,
+    headOn: 50,
+    crushed: 50,
+    trap: 15,
+    zone: 20,
+};
+
 export const SNAKE = {
-    maxHp: 2,
+    maxHp: 100,
     startLength: 3,
     invulnerableMs: 1800, // après un coup : pas de nouveaux dégâts
     maxQueuedTurns: 2,
@@ -123,7 +136,7 @@ export const POWERS = {
         cooldownMs: 1000,
         phase: 1,
         maxActive: 12,
-        description: "Une cellule piégée : -1 PV au Snake qui passe dessus.",
+        description: `Une cellule piégée : -${DAMAGE.trap} % de vie au Snake qui passe dessus.`,
     },
     wall: {
         label: "Mur",
@@ -174,7 +187,7 @@ export const POWERS = {
         radius: 1, // 3 × 3 cellules
         warnMs: 1000,
         durationMs: 6000,
-        description: "Une dalle de 3 × 3 qui brûle (-1 PV) après un court avertissement.",
+        description: `Une dalle de 3 × 3 qui brûle (-${DAMAGE.zone} % de vie) après un court avertissement.`,
     },
     teleporter: {
         label: "Téléporteur",
@@ -211,7 +224,7 @@ export const PHASES = [
 // Événements du monde. Le Snake God les voit à l'avance (information exclusive).
 export const WORLD_EVENTS = {
     intervalMs: [16000, 24000],
-    goldenFruit: { label: "Fruit doré", points: 50, growth: 3, heal: 1, lifetimeMs: 15000 },
+    goldenFruit: { label: "Fruit doré", points: 50, growth: 3, heal: 25, lifetimeMs: 15000 },
     foodRain: { label: "Pluie de nourriture", count: 5 },
     meteorShower: { label: "Pluie de météores", count: 10, warnMs: 1500, durationMs: 700 },
 };

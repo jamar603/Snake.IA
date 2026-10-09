@@ -1,4 +1,4 @@
-// Points de vie d'un Snake, avec une courte invulnérabilité après chaque coup.
+// Vie d'un Snake (en %), avec une courte invulnérabilité après chaque coup.
 export class SnakeHealth {
     constructor(maxHp, invulnerableMs) {
         this.maxHp = maxHp;
@@ -16,15 +16,15 @@ export class SnakeHealth {
         return now < this.invulnerableUntil;
     }
 
-    // Rend des PV sans dépasser le maximum. Renvoie true si des PV ont été rendus.
-    heal(amount = 1) {
+    // Rend de la vie sans dépasser le maximum. Renvoie true si de la vie a été rendue.
+    heal(amount) {
         if (this.dead || this.hp >= this.maxHp) return false;
         this.hp = Math.min(this.maxHp, this.hp + amount);
         return true;
     }
 
-    // Retire `amount` PV sauf pendant l'invulnérabilité. Renvoie true si appliqué.
-    damage(now, amount = 1) {
+    // Retire `amount` de vie sauf pendant l'invulnérabilité. Renvoie true si appliqué.
+    damage(now, amount) {
         if (this.dead || this.isInvulnerable(now)) return false;
         this.hp = Math.max(0, this.hp - amount);
         this.damageTaken += amount;

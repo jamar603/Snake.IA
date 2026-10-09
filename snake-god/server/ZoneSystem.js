@@ -1,7 +1,7 @@
 import { key } from "../shared/grid.js";
 
 // Zones dangereuses temporaires (pouvoir du dieu, impacts de météores).
-// Phase d'avertissement (visible, sans danger), puis phase active (-1 PV).
+// Phase d'avertissement (visible, sans danger), puis phase active (DAMAGE.zone).
 export class ZoneSystem {
     constructor() {
         this.zones = new Map();

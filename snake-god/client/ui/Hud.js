@@ -218,11 +218,12 @@ export class Hud extends EventTarget {
         const info = ROLE_INFO[s.id];
         const skin = SKINS[s.cosmetics?.skin];
         const color = skin ? `#${skin.primary.toString(16).padStart(6, "0")}` : info.css;
-        const hearts = Array.from({ length: s.maxHp }, (_, i) => `<i class="heart ${i < s.hp ? "" : "lost"}"></i>`).join("");
+        const pct = Math.round((s.hp / s.maxHp) * 100);
+        const level = pct <= 30 ? "low" : pct <= 60 ? "mid" : "";
         const evo = evolutionFor(s.length);
         return `<div class="card ${s.alive ? "" : "dead"}" style="--c:${color}">
             <div class="name">${escapeHtml(s.name)}${s.ai ? '<span class="ai-tag">IA</span>' : ""}${s.alive ? "" : " — éliminé"}</div>
-            <div class="hearts">${hearts}</div>
+            <div class="life ${level}"><div class="life-bar"><i style="width:${pct}%"></i></div><b>${pct}%</b></div>
             <div class="stats"><span>Score <strong>${s.score}</strong></span><span>Taille <strong>${s.length}</strong></span><span class="tier">${evo.name}</span></div>
         </div>`;
     }
@@ -296,7 +297,7 @@ export class Hud extends EventTarget {
                 this.banner(`${escapeHtml(s?.name ?? ev.snake)} est éliminé`, "", "#ff3b5c");
             }
             if (ev.type === "phase") this.banner(`Phase ${ev.phase}`, "Le monde se durcit", `#${PHASE_COLORS[ev.phase].getHexString()}`);
-            if (ev.type === "healed" && ev.snake === myRole) this.notice("+1 PV !");
+            if (ev.type === "healed" && ev.snake === myRole) this.notice(`Vie +${WORLD_EVENTS.goldenFruit.heal}% !`);
             if (ev.type === "shieldBlocked" && ev.snake === myRole) this.notice("Bouclier : coup bloqué !");
             if (ev.type === "evolved" && ev.snake === myRole) this.banner(`Évolution : ${ev.name}`, "Ton Snake devient plus puissant", "#ffd34d");
             if (ev.type === "expansionStart") {

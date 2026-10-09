@@ -404,8 +404,44 @@ export class Environment {
         this.targetTint.copy(PHASE_COLORS[phase] ?? PHASE_COLORS[1]);
     }
 
-    setShadows(on) {
+    setShadows(on, mapSize = 1024) {
         this.key.castShadow = on;
+        if (this.key.shadow.mapSize.x === mapSize) return;
+        this.key.shadow.mapSize.set(mapSize, mapSize);
+        this.key.shadow.map?.dispose(); // recréée à la bonne taille au prochain rendu
+        this.key.shadow.map = null;
+    }
+
+    // Reflets : un ciel miniature (dégradé violet + panneaux aux positions des lumières)
+    // précalculé en env map. Sans lui, métal, cristaux et or ne reflètent que du noir.
+    buildReflections(renderer) {
+        const env = new THREE.Scene();
+        const geo = new THREE.SphereGeometry(10, 32, 16);
+        const top = new THREE.Color(0x4a3580), bottom = new THREE.Color(0x07050d);
+        const pos = geo.attributes.position;
+        const col = new Float32Array(pos.count * 3);
+        const c = new THREE.Color();
+        for (let i = 0; i < pos.count; i++) {
+            c.lerpColors(bottom, top, THREE.MathUtils.smoothstep(pos.getY(i) / 10, -0.4, 0.8)).toArray(col, i * 3);
+        }
+        geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+        env.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+        // Panneaux lumineux : couleur > 1 = lumière HDR, d'où des reflets nets sur les matériaux brillants.
+        const panel = (color, power, x, y, z, w, h) => {
+            const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(power) }));
+            m.position.set(x, y, z).setLength(9);
+            m.lookAt(0, 0, 0);
+            env.add(m);
+        };
+        panel(0xf6f0ff, 6, 7, 15, 9, 5, 3); // lumière principale
+        panel(0xa98bff, 4, -10, 4, -12, 7, 2); // contre-jour
+        panel(0xffb347, 2, 12, 1, -6, 3, 1.5); // reflet chaud des lanternes
+        panel(0x7a3cff, 3, 0, -10, 0, 8, 8); // lueur du Snake God par-dessous
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        this.scene.environment = pmrem.fromScene(env, 0.03).texture;
+        this.scene.environmentIntensity = 0.55;
+        pmrem.dispose();
+        env.traverse((o) => (o.geometry?.dispose(), o.material?.dispose()));
     }
 
     update(time, dt) {

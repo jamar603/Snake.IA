@@ -5,9 +5,9 @@ const SETTINGS_KEY = "snakegod.settings";
 const PROFILE_KEY = "snakegod.profile";
 
 export const QUALITY = {
-    low: { label: "Basse", pixelRatio: 1, shadows: false, bloom: false, particles: 0.4 },
-    medium: { label: "Moyenne", pixelRatio: 1.25, shadows: true, bloom: true, particles: 0.7 },
-    high: { label: "Haute", pixelRatio: 2, shadows: true, bloom: true, particles: 1 },
+    low: { label: "Basse", pixelRatio: 1, shadows: false, shadowMap: 1024, bloom: false, ao: false, msaa: 0, particles: 0.4 },
+    medium: { label: "Moyenne", pixelRatio: 1.25, shadows: true, shadowMap: 1024, bloom: true, ao: false, msaa: 2, particles: 0.7 },
+    high: { label: "Haute", pixelRatio: 2, shadows: true, shadowMap: 2048, bloom: true, ao: true, msaa: 4, particles: 1 },
 };
 
 export const DEFAULT_SETTINGS = {

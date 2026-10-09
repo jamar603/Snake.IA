@@ -44,6 +44,7 @@ let map = createMap("cube", MENU_ARENA);
 let space = GRID_SIZE; // espace de coordonnées de la map
 const env = new Environment(scene, GRID_SIZE);
 env.setArena(MENU_ARENA);
+env.buildReflections(renderer);
 const world = new WorldController(scene, GRID_SIZE, map);
 const effects = new Effects(scene);
 const menuStage = new MenuStage(scene, effects, MENU_ARENA);
@@ -59,7 +60,10 @@ const god = new GodController({ scene, camera, canvas, size: GRID_SIZE, net, map
 const input = new InputManager(settings);
 const snakeInput = new SnakeInput(
     input,
-    (turn) => net.turn(turn),
+    (turn) => {
+        net.turn(turn);
+        snakeViews.get(myRole)?.predictTurn(turn); // la tête tourne tout de suite, sans attendre le serveur
+    },
     (skill) => net.useSkill(skill)
 );
 hud.setInput(input);
@@ -89,6 +93,9 @@ let room = null;
 let myRole = null;
 let state = null;
 let stateTime = 0;
+// Intervalle réel entre deux états (moyenne glissante) : l'interpolation s'étale sur ce
+// temps-là et non sur tickMs théorique, sinon le Snake s'arrête dès qu'un paquet a du retard.
+let stateInterval = 0;
 let quickRole = undefined; // rôle de la dernière partie rapide (pour "Rejouer")
 const snakeViews = new Map();
 
@@ -96,8 +103,8 @@ const snakeViews = new Map();
 function applySettings() {
     const q = settings.quality;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
-    postfx.enabled = q.bloom && settings.get("bloom");
-    env.setShadows(q.shadows);
+    postfx.configure({ bloom: q.bloom && settings.get("bloom"), ao: q.ao, msaa: q.msaa });
+    env.setShadows(q.shadows, q.shadowMap);
     effects.density = q.particles;
     camera.fov = settings.get("fov");
     cameras.snake.distance = settings.get("cameraDistance");
@@ -203,7 +210,11 @@ net.on(S2C.STATE, (msg) => {
     else if (newMatch) resetMatchView();
     const prev = state;
     state = msg;
-    stateTime = performance.now();
+    const now = performance.now();
+    const measured = now - stateTime;
+    if (newMatch || !prev || prev.tickMs !== msg.tickMs || !stateInterval) stateInterval = msg.tickMs;
+    else stateInterval += (Math.min(msg.tickMs * 1.4, Math.max(msg.tickMs * 0.8, measured)) - stateInterval) * 0.2;
+    stateTime = now;
     applyState(msg);
     gameAudio.onState(msg, prev, myRole);
     updateControls();
@@ -533,7 +544,7 @@ function frame() {
         menuStage.update(dt);
         cameras.update(dt, { showcase: menuStage.showcasePos });
     } else {
-        const alpha = state ? Math.min(1, (now - stateTime) / state.tickMs) : 1;
+        const alpha = state ? Math.min(1, (now - stateTime) / (stateInterval || state.tickMs)) : 1;
         for (const v of snakeViews.values()) v.update(alpha, now, dt);
         const myView = snakeViews.get(myRole);
         world.setFocus(myView?.cur?.alive ? myView.headPos : null);

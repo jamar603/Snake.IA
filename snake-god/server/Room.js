@@ -136,8 +136,12 @@ export class Room {
         this.#loop();
     }
 
+    // Cadence calée sur une horloge absolue : setTimeout se déclenche toujours un peu en
+    // retard (jusqu'à ~15 ms sous Windows) ; enchaîner des délais fixes accumulait ce
+    // retard à chaque tick et le client voyait le Snake marquer un arrêt à chaque case.
     #loop() {
         clearTimeout(this.timer);
+        let next = performance.now() + this.game.tickMs;
         const step = () => {
             this.game.tick(this.game.tickMs);
             const state = this.game.snapshot();
@@ -147,7 +151,8 @@ export class Room {
                 this.broadcastRoom();
                 return;
             }
-            this.timer = setTimeout(step, this.game.tickMs);
+            next = Math.max(next + this.game.tickMs, performance.now()); // pas de rattrapage en rafale
+            this.timer = setTimeout(step, next - performance.now());
         };
         this.timer = setTimeout(step, this.game.tickMs);
     }

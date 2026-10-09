@@ -3,6 +3,7 @@
 Usage (depuis le dossier snake-god) :
     "C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe" --background --python blender/build_island.py
     ... --python blender/build_island.py -- --preview chemin/apercu.png
+    ... --python blender/build_island.py -- --no-bake   (export rapide, sans occlusion précalculée)
 
 Style : diorama « jouet » (bords arrondis, couleurs franches, lanternes chaudes).
 Le fichier contient des pièces nommées que le jeu assemble lui-même :
@@ -373,6 +374,50 @@ def build_islet(m):
     return join([rock, dirt, cap], "Islet")
 
 
+# ---------- Lumière précalculée ----------
+# Le jeu assemble l'île lui-même (dalles, décors placés par le code, socle étiré) :
+# une lightmap de scène entière serait fausse dès la première partie. On précalcule
+# donc l'occlusion de chaque pièce seule (creux du feuillage, dessous des branches,
+# coins de la caisse, rochers incrustés) dans ses couleurs de sommets. Three.js les
+# multiplie à la couleur du matériau : ombres douces gratuites à l'exécution.
+AO_DISTANCE = {"Island": 1.4, "Islet": 0.8}  # portée de l'occlusion, en cases (0.5 sinon)
+# Caisse : les coins de la boîte sont enfouis dans les montants, l'occlusion par sommet
+# la noircirait entière. Elle reste sans précalcul.
+AO_SKIP = {"Crate"}
+AO_STRENGTH = 0.85
+AO_SHADOW = (0.32, 0.26, 0.5)  # les creux virent au violet de la nuit plutôt qu'au gris
+
+
+def bake_ao(pieces):
+    scene = bpy.context.scene
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 128
+    scene.render.bake.target = "VERTEX_COLORS"
+    scene.world = scene.world or bpy.data.worlds.new("Bake")
+    for name, obj in pieces.items():
+        if name in AO_SKIP:
+            continue
+        for other in pieces.values():
+            other.hide_render = other is not obj
+        mesh = obj.data
+        attr = mesh.color_attributes.new("AO", "BYTE_COLOR", "CORNER")
+        mesh.color_attributes.active_color = attr
+        mesh.attributes.default_color_name = attr.name
+        scene.world.light_settings.distance = AO_DISTANCE.get(name, 0.5)
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.bake(type="AO", target="VERTEX_COLORS")
+        for data in attr.data:
+            ao = data.color[0] ** 0.8
+            k = 1 - AO_STRENGTH * (1 - ao)
+            data.color = (*(s + (1 - s) * k for s in AO_SHADOW), 1.0)
+        print("Occlusion précalculée :", name)
+    for obj in pieces.values():
+        obj.hide_render = False
+
+
 # ---------- Export et aperçu ----------
 def export(objects):
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -385,6 +430,7 @@ def export(objects):
         use_selection=True,
         export_apply=True,
         export_yup=True,
+        export_vertex_color="ACTIVE",  # occlusion précalculée -> COLOR_0
     )
     print("Exporté :", OUT)
 
@@ -466,6 +512,8 @@ def main():
         bpy.context.view_layer.objects.active = obj
         bpy.ops.object.origin_set(type="ORIGIN_CURSOR")
         obj.location = (0, 0, 0)
+    if "--no-bake" not in argv:
+        bake_ao(pieces)
     export(list(pieces.values()))
     if "--preview" in argv:
         preview(pieces, os.path.abspath(argv[argv.index("--preview") + 1]))

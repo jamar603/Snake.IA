@@ -19,7 +19,7 @@ export function foodKind({ golden = false, kind, variant = 0 } = {}) {
     return FOOD_KINDS[Math.abs(variant) % FOOD_KINDS.length];
 }
 
-// Pièges : même règle pour tous (-1 PV), apparence tirée de la case (stable, identique partout).
+// Pièges : même règle pour tous (DAMAGE.trap), apparence tirée de la case (stable, identique partout).
 // RuneMine est la mine historique (blender/build_island.py) ; les autres viennent de build_props.py.
 export const TRAP_KINDS = ["SpikeTrap", "JawTrap", "SawTrap", "FireTrap", "TeslaTrap", "RuneMine"];
 

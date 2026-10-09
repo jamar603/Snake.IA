@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DAMAGE } from "../shared/config.js";
 import { MATCH_STATUS } from "../shared/protocol.js";
 import { GameManager } from "../server/GameManager.js";
 
@@ -22,7 +23,8 @@ test("un Snake IA seul mange et survit", () => {
         const s = game.snakes[0];
         assert.equal(s.alive, true, `graine ${seed}`);
         assert.ok(s.growth.eaten >= 8, `graine ${seed} : ${s.growth.eaten} repas`);
-        assert.ok(s.health.damageTaken <= 1, `graine ${seed} : ${s.health.damageTaken} dégâts`);
+        assert.ok(s.health.damageTaken <= DAMAGE.wall, // un choc au plus
+            `graine ${seed} : ${s.health.damageTaken} dégâts`);
     }
 });
 

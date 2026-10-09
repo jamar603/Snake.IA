@@ -120,9 +120,9 @@ export class GameAudio {
             }
         }
 
-        // Danger : battement de cœur discret (peu de PV, piège ou zone tout proche).
+        // Danger : battement de cœur discret (vie basse, piège ou zone tout proche).
         const now = performance.now();
-        const low = mine?.alive && mine.hp === 1;
+        const low = mine?.alive && mine.hp <= mine.maxHp * 0.3;
         const pulse = Math.max(low ? 0.6 : 0, danger);
         if (pulse > 0.3 && now - this.lastHeartbeat > (pulse > 0.8 ? 650 : 1000)) {
             this.lastHeartbeat = now;

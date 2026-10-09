@@ -1,5 +1,6 @@
 import {
     COUNTDOWN_SECONDS,
+    DAMAGE,
     DEFAULT_MAP,
     FOOD_COUNT,
     MAPS,
@@ -124,7 +125,7 @@ export class GameManager {
         const spawns = this.grid.map.spawnPoints();
         for (const id of ["snake1", "snake2"]) {
             if (!roster[id]) continue;
-            const s = new SnakeController(id, roster[id].name, this.mapConfig.snakeHp);
+            const s = new SnakeController(id, roster[id].name);
             s.cosmetics = sanitizeCosmetics(roster[id].cosmetics, DEFAULT_COSMETICS[id]);
             s.spawn(spawns[id].cell, spawns[id].dir, spawns[id].up);
             this.snakes.push(s);
@@ -441,7 +442,7 @@ export class GameManager {
                 s.growth.feed(golden ? WORLD_EVENTS.goldenFruit.growth : 1);
                 this.scores.onFoodEaten(s, golden ? WORLD_EVENTS.goldenFruit.points : undefined);
                 this.events.push({ type: "foodEaten", cells: [s.head], snake: s.id, golden, variant: this.food.lastVariant });
-                // Le fruit doré soigne : +1 PV.
+                // Le fruit doré soigne.
                 if (golden && s.health.heal(WORLD_EVENTS.goldenFruit.heal)) this.events.push({ type: "healed", cells: [s.head], snake: s.id, hp: s.health.hp });
                 const tier = evolutionFor(s.length + s.growth.pending);
                 if (tier.tier > tierBefore) this.events.push({ type: "evolved", snake: s.id, tier: tier.tier, name: tier.name, cells: [s.head] });
@@ -488,15 +489,16 @@ export class GameManager {
     #damage(snake, cause, byGod) {
         const cell = snake.head;
         if (snake.health.isInvulnerable(this.now)) return;
-        // Bouclier : encaisse le coup à la place des PV, puis courte invulnérabilité.
+        // Bouclier : encaisse le coup à la place de la vie, puis courte invulnérabilité.
         if (snake.skills.isActive("shield", this.now)) {
             snake.skills.end("shield");
             snake.health.invulnerableUntil = this.now + 600;
             this.events.push({ type: "shieldBlocked", cells: [cell], snake: snake.id, cause });
             return;
         }
-        if (!snake.health.damage(this.now)) return;
-        this.events.push({ type: "damage", cells: [cell], snake: snake.id, cause, byGod: !!byGod });
+        const amount = Math.round(DAMAGE[cause] * (this.mapConfig.damageScale ?? 1));
+        if (!snake.health.damage(this.now, amount)) return;
+        this.events.push({ type: "damage", cells: [cell], snake: snake.id, cause, byGod: !!byGod, amount });
         this.scores.onSnakeDamaged(snake, byGod);
         if (snake.health.dead) {
             snake.eliminate(this.now);

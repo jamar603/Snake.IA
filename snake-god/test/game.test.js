@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAPS, POWERS, SNAKE, UNLIMITED } from "../shared/config.js";
+import { DAMAGE, MAPS, POWERS, SNAKE, UNLIMITED } from "../shared/config.js";
 import { key, rotateQuarter, rotatingWallCells, rotatingWallFits } from "../shared/grid.js";
 import { createMap } from "../shared/maps/index.js";
 import { MATCH_STATUS } from "../shared/protocol.js";
@@ -132,13 +132,13 @@ test("nourriture : apparence tirée au hasard, transmise aux clients et à l'év
     assert.equal(s.score, SNAKE.foodPoints, "la variante ne change pas les points");
 });
 
-test("piège : -1 PV puis disparition", () => {
+test("piège : dégâts légers puis disparition", () => {
     const game = newGame({ snake1: "A", god: "G" });
     const s = place(game, "snake1", at(5, 7));
     game.traps.place(at(7, 7));
     game.tick(100);
     game.tick(100);
-    assert.equal(s.health.hp, SNAKE.maxHp - 1);
+    assert.equal(s.health.hp, SNAKE.maxHp - DAMAGE.trap);
     assert.equal(game.traps.count, 0);
     assert.equal(game.scores.god.damageDealt, 1);
 });
@@ -164,7 +164,7 @@ test("mur rotatif : phase 2, couché sur la face, écrase un Snake", () => {
     const wall = game.walls.addRotating(at(7, 7), "y", 2, 100, game.now);
     assert.ok(wall.cells.every((c) => c[1] === TOP));
     game.tick(100); // la lame pivote et balaie [7, 11, 5]
-    assert.equal(s.health.hp, SNAKE.maxHp - 1);
+    assert.equal(s.health.hp, SNAKE.maxHp - DAMAGE.crushed);
     assert.equal(s.alive, true);
 });
 
@@ -173,15 +173,15 @@ test("WORLD : le bord blesse et fait réapparaître", () => {
     const map = game.grid.map;
     const s = place(game, "snake1", [map.arena.max, map.layer, map.arena.min + 4]);
     game.tick(100);
-    assert.equal(s.health.maxHp, MAPS.world.snakeHp);
-    assert.equal(s.health.hp, s.health.maxHp - 1);
+    assert.ok(MAPS.world.damageScale < 1, "mode accessible : dégâts réduits");
+    assert.equal(s.health.hp, s.health.maxHp - Math.round(DAMAGE.boundary * MAPS.world.damageScale));
     assert.equal(s.length, SNAKE.startLength);
     assert.ok(map.isCell(s.head));
 });
 
 test("le dieu gagne quand tous les Snakes sont éliminés", () => {
     const game = newGame({ snake1: "A", god: "G" });
-    for (let i = 0; i < SNAKE.maxHp; i++) {
+    for (let i = 0; i < Math.ceil(SNAKE.maxHp / DAMAGE.wall); i++) {
         const s = place(game, "snake1", at(6, 7));
         s.health.invulnerableUntil = 0;
         game.walls.addStatic([at(7, 7)], { kind: "pillar" });
@@ -210,7 +210,7 @@ test("démolition : ouvre un passage", () => {
     assert.equal(game.walls.isWall(key(at(9, 9))), false);
 });
 
-test("zone dangereuse : sur la face, avertissement puis -1 PV", () => {
+test("zone dangereuse : sur la face, avertissement puis dégâts", () => {
     const game = newGame({ snake1: "A", god: "G" });
     const s = place(game, "snake1", at(5, 7));
     game.now = game.matchMs * 0.6; // phase 3
@@ -222,7 +222,7 @@ test("zone dangereuse : sur la face, avertissement puis -1 PV", () => {
     assert.equal(s.health.hp, SNAKE.maxHp);
     game.tick(1200);
     game.tick(100);
-    assert.equal(s.health.hp, SNAKE.maxHp - 1);
+    assert.equal(s.health.hp, SNAKE.maxHp - DAMAGE.zone);
 });
 
 test("téléporteur : sortie sûre sur une autre face, la tête ressort de l'autre côté", () => {
@@ -349,7 +349,7 @@ test("compétences : sprint, bouclier et phase", () => {
     assert.deepEqual(s.head, at(7, 7));
     assert.ok(game.events.some((e) => e.type === "skillUsed" && e.skill === "sprint"), "événement reçu hors tick, envoyé au tick suivant");
 
-    // Bouclier : le choc contre un mur ne coûte pas de PV.
+    // Bouclier : le choc contre un mur ne coûte pas de vie.
     game = newGame({ snake1: "A" });
     s = place(game, "snake1", at(5, 7), [1, 0, 0], 1);
     game.walls.addStatic([at(6, 7)], { kind: "pillar" });
@@ -379,11 +379,11 @@ test("CUBE 3D (classique) : on vole dans le volume, haut et bas, le bord blesse"
     game.tick(100);
     assert.deepEqual(s.head, [mid, mid + 1, mid], "monte");
     assert.deepEqual(s.dir, [0, 1, 0]);
-    // Bord du volume : -1 PV et réapparition.
+    // Bord du volume : dégâts et réapparition.
     const t = place(game, "snake1", [map.arena.max, mid, mid], [1, 0, 0], 1);
     t.up = [0, 1, 0];
     game.tick(100);
-    assert.equal(t.health.hp, t.health.maxHp - 1);
+    assert.equal(t.health.hp, t.health.maxHp - DAMAGE.boundary);
     assert.ok(map.isCell(t.head));
     assert.equal(t.dir.reduce((a, v, i) => a + v * t.up[i], 0), 0, "haut perpendiculaire à la direction");
     // Haut / bas ignorés sur le cube de surface.

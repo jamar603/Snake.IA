@@ -1112,9 +1112,15 @@ input[type="range"] { accent-color: var(--signal); width: 200px; }
 .card .name { font-weight: 700; color: var(--c); font-size: 15px; display: flex; gap: 6px; align-items: center; }
 .card .stats { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; gap: 12px; font-variant-numeric: tabular-nums; }
 .card .stats strong { color: var(--text); font-weight: 700; }
-.card .hearts { display: flex; gap: 3px; margin: 4px 0; }
-.heart { width: 16px; height: 14px; background: var(--danger); clip-path: path("M8 14 L1.3 7.4 A3.8 3.8 0 0 1 8 2.6 A3.8 3.8 0 0 1 14.7 7.4 Z"); }
-.heart.lost { background: rgba(226, 216, 255, 0.16); }
+.card .life { display: flex; align-items: center; gap: 8px; margin: 4px 0; --life: #4ee08a; }
+.card .life.mid { --life: #ffb02e; }
+.card .life.low { --life: var(--danger); }
+.life-bar { flex: 1; height: 8px; border-radius: 4px; background: rgba(226, 216, 255, 0.16); overflow: hidden; }
+.life-bar i { display: block; height: 100%; background: var(--life); border-radius: inherit; transition: width 0.35s cubic-bezier(0.23, 1, 0.32, 1), background-color 0.35s; }
+.card .life b { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: var(--life); font-size: 13px; }
+.card .life.low .life-bar i { animation: life-low 0.8s ease-in-out infinite alternate; }
+@keyframes life-low { to { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .card .life.low .life-bar i { animation: none; } }
 .card .tier { font-size: 10px; color: var(--gold); }
 .card.dead { opacity: 0.4; }
 .ai-tag { font-size: 9px; padding: 1px 5px; border-radius: 2px; border: 1px solid var(--line-strong); color: var(--muted); letter-spacing: 0.08em; }

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { evolutionFor } from "/shared/cosmetics.js";
-import { cross, equals } from "/shared/grid.js";
+import { SNAKE } from "/shared/config.js";
+import { cross, equals, neg } from "/shared/grid.js";
 import { cellToWorld, vec } from "./coords.js";
 import { SnakeModel } from "./SnakeModel.js";
 import { glowTexture } from "./textures.js";
@@ -94,6 +95,33 @@ export class SnakeView {
         this.points = [];
         this.path = [];
         this.tmp = new THREE.Vector3();
+        this.pending = []; // virages du joueur local pas encore appliqués par le serveur : { turn, age }
+    }
+
+    // Même calcul que SnakeController.applyQueuedTurn.
+    static #turned(dir, up, turn) {
+        const right = cross(dir, up);
+        if (turn === "right") return [right, up];
+        if (turn === "left") return [neg(right), up];
+        if (turn === "up") return [up, neg(dir)];
+        return [neg(up), dir];
+    }
+
+    // Virage du joueur local : la tête (et la caméra qui la suit) pivote dès l'appui ;
+    // le corps, lui, suit la grille du serveur au tick suivant.
+    predictTurn(turn) {
+        if (!this.cur?.alive || this.pending.length >= SNAKE.maxQueuedTurns) return;
+        this.pending.push({ turn, age: 0 });
+        this.#aimHead();
+    }
+
+    // Orientation visée : direction du serveur, plus les virages prédits encore en attente.
+    #aimHead() {
+        let dir = this.cur.dir;
+        let up = this.cur.up;
+        for (const p of this.pending) [dir, up] = SnakeView.#turned(dir, up, p.turn);
+        const left = vec(cross(up, dir)); // x local = haut × avant
+        this.targetQuat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(left, vec(up), vec(dir)));
     }
 
     setMap(map, size) {
@@ -133,10 +161,14 @@ export class SnakeView {
             g.mesh.visible = visible && this.isMine && (volume || turn === "left" || turn === "right");
         }
 
-        const dir = vec(snake.dir);
-        const up = vec(snake.up);
-        const left = vec(cross(snake.up, snake.dir)); // x local = haut × avant
-        this.targetQuat.setFromRotationMatrix(new THREE.Matrix4().makeBasis(left, up, dir));
+        // Le serveur applique un virage par tick : direction changée = un virage prédit consommé.
+        // Passer une arête du cube change aussi la direction, mais avec le « haut » : ignoré.
+        // Un virage resté sans effet deux ticks (refusé, perdu) est oublié.
+        const turned =
+            this.prev && !equals(this.prev.dir, snake.dir) && (this.map?.kind === "volume" || equals(this.prev.up, snake.up));
+        if (turned) this.pending.shift();
+        this.pending = snake.alive ? this.pending.filter((p) => ++p.age < 3) : [];
+        this.#aimHead();
         if (this.#teleported()) this.headQuat.copy(this.targetQuat);
         if (visible) {
             this.#watchEdge(snake);
