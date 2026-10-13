@@ -10,8 +10,12 @@ export const QUALITY = {
     high: { label: "Haute", pixelRatio: 2, shadows: true, shadowMap: 2048, bloom: true, ao: true, msaa: 4, particles: 1 },
 };
 
+// Ordre des niveaux : la baisse automatique descend d'un cran dans cette liste.
+export const QUALITY_LEVELS = ["low", "medium", "high"];
+
 export const DEFAULT_SETTINGS = {
-    quality: "high",
+    quality: null, // null : choisie au premier lancement selon la carte graphique (detectQuality)
+    qualityAuto: true, // false dès que le joueur choisit une qualité : plus de baisse automatique
     bloom: true,
     cameraDistance: 1, // multiplicateur de la caméra à la troisième personne
     fov: 62,
@@ -34,6 +38,7 @@ export class Settings extends EventTarget {
             volume: { ...AUDIO_DEFAULTS.volume, ...saved.audio?.volume },
             enabled: { ...AUDIO_DEFAULTS.enabled, ...saved.audio?.enabled },
         };
+        if (!QUALITY[this.values.quality]) this.values.quality = detectQuality();
         const p = read(PROFILE_KEY) ?? {};
         this.profile = {
             name: typeof p.name === "string" ? p.name : "",
@@ -63,7 +68,7 @@ export class Settings extends EventTarget {
     }
 
     reset() {
-        this.values = { ...DEFAULT_SETTINGS, audio: structuredClone(AUDIO_DEFAULTS) };
+        this.values = { ...DEFAULT_SETTINGS, audio: structuredClone(AUDIO_DEFAULTS), quality: detectQuality() };
         write(SETTINGS_KEY, this.values);
         this.dispatchEvent(new CustomEvent("change", { detail: {} }));
     }
@@ -76,6 +81,25 @@ export class Settings extends EventTarget {
         write(PROFILE_KEY, this.profile);
         this.dispatchEvent(new CustomEvent("profile", { detail: this.profile }));
     }
+}
+
+// Qualité de départ selon la carte graphique : rendu logiciel en Basse, puce intégrée
+// (portable, PC de bureau sans carte dédiée) en Moyenne, carte dédiée en Haute.
+export function detectQuality() {
+    let gpu = "";
+    try {
+        const gl = document.createElement("canvas").getContext("webgl2") ?? document.createElement("canvas").getContext("webgl");
+        if (!gl) return "low";
+        const info = gl.getExtension("WEBGL_debug_renderer_info");
+        gpu = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+        gl.getExtension("WEBGL_lose_context")?.loseContext();
+    } catch {
+        return "medium";
+    }
+    if (/swiftshader|llvmpipe|software|basic render/i.test(gpu)) return "low";
+    if ((navigator.deviceMemory ?? 8) <= 4) return "low";
+    if (/intel|uhd|iris|radeon\(tm\) graphics|vega \d+ graphics|mali|adreno|powervr|apple/i.test(gpu)) return "medium";
+    return "high";
 }
 
 function read(key) {

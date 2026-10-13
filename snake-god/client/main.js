@@ -20,7 +20,7 @@ import { MenuStage } from "./render/MenuStage.js";
 import { PostFX } from "./render/PostFX.js";
 import { SnakeView } from "./render/SnakeView.js";
 import { WorldController } from "./render/WorldController.js";
-import { Settings } from "./settings.js";
+import { QUALITY_LEVELS, Settings } from "./settings.js";
 import { ControlsPanel } from "./ui/ControlsPanel.js";
 import { renderEnd } from "./ui/EndScreen.js";
 import { Hud } from "./ui/Hud.js";
@@ -29,7 +29,15 @@ import { UIManager } from "./ui/UIManager.js";
 // ---------- Scène et rendu ----------
 const settings = new Settings();
 const canvas = document.getElementById("view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+// Antialiasing du canvas seulement sans post-traitement : le composer a son propre MSAA,
+// le canvas multi-échantillonné coûterait de la mémoire vidéo pour rien.
+// Fixé à la création du contexte : un changement de qualité prend effet au rechargement.
+const startQuality = settings.quality;
+const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: !(startQuality.bloom && settings.get("bloom")) && !startQuality.ao,
+    powerPreference: "high-performance",
+});
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -519,9 +527,28 @@ window.addEventListener("resize", resize);
 applySettings();
 menuStage.setShowcase(false, settings.profile.cosmetics);
 
+// Qualité adaptative : si l'image passe sous 50 FPS pendant deux fenêtres de 3 s de suite,
+// la qualité baisse d'un cran. Seulement tant que le joueur n'a pas choisi sa qualité.
+const fpsWatch = { time: 0, frames: 0, slow: 0 };
+function watchFps(rawMs) {
+    if (!settings.get("qualityAuto") || rawMs > 250) return; // onglet en pause : mesure ignorée
+    fpsWatch.time += rawMs;
+    fpsWatch.frames++;
+    if (fpsWatch.time < 3000) return;
+    const fps = (fpsWatch.frames * 1000) / fpsWatch.time;
+    fpsWatch.time = fpsWatch.frames = 0;
+    fpsWatch.slow = fps < 50 ? fpsWatch.slow + 1 : 0;
+    const level = QUALITY_LEVELS.indexOf(settings.get("quality"));
+    if (fpsWatch.slow < 2 || level <= 0) return;
+    fpsWatch.slow = 0;
+    console.info(`Snakora : ${fps.toFixed(0)} FPS, qualité baissée à ${QUALITY_LEVELS[level - 1]}`);
+    settings.set("quality", QUALITY_LEVELS[level - 1]);
+}
+
 let last = performance.now();
 function frame() {
     const now = performance.now(); // même horloge que stateTime
+    watchFps(now - last);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
 

@@ -451,6 +451,7 @@ export class UIManager extends EventTarget {
             .join("");
         for (const b of seg.querySelectorAll("button")) {
             b.addEventListener("click", () => {
+                this.settings.set("qualityAuto", false); // choix du joueur : plus de baisse automatique
                 this.settings.set("quality", b.dataset.q);
                 this.#renderSettings();
             });
