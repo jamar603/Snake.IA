@@ -7,6 +7,15 @@ import { Room } from "./Room.js";
 
 const CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
+// Garde-fous pour un serveur public : chaque salon fait tourner des IA côté serveur,
+// sans limite quelques clients suffiraient à saturer le processeur.
+export const LIMITS = {
+    maxRooms: Number(process.env.MAX_ROOMS) || 100,
+    maxConnections: Number(process.env.MAX_CONNECTIONS) || 300,
+    maxPerIp: Number(process.env.MAX_CONNECTIONS_PER_IP) || 8,
+    maxPayload: 16 * 1024, // octets par message ; les messages du jeu font moins de 1 Ko
+};
+
 // Serveur autoritaire : connexions WebSocket, profils, salons.
 // Chaque salon (Room) fait tourner sa propre partie. Un jeton par joueur
 // permet de reprendre sa place (et son salon) après une déconnexion.
@@ -15,8 +24,9 @@ export class MultiplayerManager {
         this.gameOptions = gameOptions;
         this.players = new Map(); // id -> joueur
         this.rooms = new Map(); // code -> Room
-        this.wss = new WebSocketServer({ server: httpServer, path: "/ws" });
-        this.wss.on("connection", (ws) => this.#onConnection(ws));
+        this.perIp = new Map(); // IP -> connexions ouvertes
+        this.wss = new WebSocketServer({ server: httpServer, path: "/ws", maxPayload: LIMITS.maxPayload });
+        this.wss.on("connection", (ws, req) => this.#onConnection(ws, req));
         this.heartbeat = setInterval(() => this.#heartbeat(), 5000);
     }
 
@@ -26,7 +36,22 @@ export class MultiplayerManager {
         this.wss.close();
     }
 
-    #onConnection(ws) {
+    #onConnection(ws, req) {
+        // Sans écouteur, une erreur de socket (message trop gros, trame invalide) fait
+        // planter tout le serveur. `ws` ferme ensuite la connexion de lui-même.
+        ws.on("error", () => {});
+        const ip = clientIp(req);
+        const count = this.perIp.get(ip) ?? 0;
+        if (this.wss.clients.size > LIMITS.maxConnections || count >= LIMITS.maxPerIp) {
+            ws.close(1013, "Serveur plein");
+            return;
+        }
+        this.perIp.set(ip, count + 1);
+        ws.once("close", () => {
+            const n = (this.perIp.get(ip) ?? 1) - 1;
+            if (n > 0) this.perIp.set(ip, n);
+            else this.perIp.delete(ip);
+        });
         ws.isAlive = true;
         ws.on("pong", () => (ws.isAlive = true));
         let player = null;
@@ -97,6 +122,7 @@ export class MultiplayerManager {
             case C2S.LIST_ROOMS:
                 return this.#sendRooms(player);
             case C2S.CREATE_ROOM: {
+                if (!this.#canCreateRoom(player)) return;
                 this.#leave(player);
                 const room = this.#createRoom(`Salon de ${player.name}`, !!msg.private);
                 room.add(player);
@@ -117,6 +143,7 @@ export class MultiplayerManager {
                 return;
             case C2S.QUICK_PLAY: {
                 // Salon privé, le joueur prend son rôle (ou regarde), l'IA fait le reste.
+                if (!this.#canCreateRoom(player)) return;
                 this.#leave(player);
                 const room = this.#createRoom("Partie rapide", true);
                 room.setDuration(msg.duration);
@@ -129,6 +156,14 @@ export class MultiplayerManager {
             default:
                 player.room?.handle(player, msg);
         }
+    }
+
+    // Quitter son salon libère sa place : seul un nouveau salon en plus compte dans la limite.
+    #canCreateRoom(player) {
+        const freed = player.room?.players.size === 1 ? 1 : 0;
+        if (this.rooms.size - freed < LIMITS.maxRooms) return true;
+        this.#send(player, { t: S2C.NOTICE, message: "Serveur plein : réessaie dans quelques minutes." });
+        return false;
     }
 
     #createRoom(name, isPrivate) {
@@ -166,7 +201,9 @@ export class MultiplayerManager {
         // Un joueur absent trop longtemps quitte son salon ; un salon vide est fermé.
         for (const p of [...this.players.values()]) {
             if (p.connected || Date.now() - p.disconnectedAt < RECONNECT_GRACE_MS) continue;
-            if (p.room?.inMatch) continue; // garde sa place jusqu'à la fin de la partie
+            // Garde sa place jusqu'à la fin de la partie, sauf si plus personne n'est connecté :
+            // une partie illimitée sans joueur tournerait sinon pour toujours.
+            if (p.room?.inMatch && p.room.connectedCount > 0) continue;
             this.#leave(p);
             this.players.delete(p.id);
         }
@@ -191,6 +228,13 @@ export class MultiplayerManager {
     #send(player, msg) {
         if (player.connected && player.ws?.readyState === 1) player.ws.send(JSON.stringify(msg));
     }
+}
+
+// Derrière un hébergeur (Render, Railway, Fly.io...), l'IP du client est dans
+// X-Forwarded-For ; TRUST_PROXY=1 l'active (sinon un client pourrait la falsifier).
+function clientIp(req) {
+    const forwarded = process.env.TRUST_PROXY ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "";
+    return forwarded || req.socket.remoteAddress || "?";
 }
 
 function cleanName(name) {

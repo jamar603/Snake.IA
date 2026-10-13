@@ -19,7 +19,6 @@ export class MultiplayerClient extends EventTarget {
         const ws = new WebSocket(`${proto}://${location.host}/ws`);
         this.ws = ws;
         ws.addEventListener("open", () => {
-            this.retryMs = 500;
             this.connected = true;
             this.#emit("connection", { connected: true });
             const token = storage(() => sessionStorage.getItem(TOKEN_KEY));
@@ -28,6 +27,9 @@ export class MultiplayerClient extends EventTarget {
         ws.addEventListener("message", (e) => {
             const msg = JSON.parse(e.data);
             if (msg.t === S2C.WELCOME) {
+                // Délai remis à zéro à l'accueil, pas à l'ouverture : un serveur plein
+                // ferme la connexion juste après l'avoir ouverte.
+                this.retryMs = 500;
                 this.playerId = msg.playerId;
                 storage(() => sessionStorage.setItem(TOKEN_KEY, msg.token));
                 // Le profil local fait foi (personnalisation faite hors connexion).
