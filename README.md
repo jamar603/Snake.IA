@@ -11,6 +11,12 @@ Un serveur est nécessaire, car le navigateur bloque le chargement des modèles 
 
 Commandes : flèches ou ZQSD, Espace pour la pause, glisser sur mobile.
 
+## Déployer sur GitHub Pages
+
+Le workflow GitHub Actions publie automatiquement le jeu à chaque push sur `main`.
+Dans les paramètres du dépôt, ouvrez **Pages** et choisissez **GitHub Actions** comme source de déploiement.
+Après le premier déploiement réussi, le jeu sera disponible à l'adresse indiquée dans l'exécution du workflow (généralement `https://jamar603.github.io/Snake.IA/`).
+
 ## Modèles 3D
 
 Les fichiers `assets/models/*.glb` sont générés par `blender/build_models.py` :
